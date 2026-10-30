@@ -1023,3 +1023,20 @@ textarea {
     width: calc(100% - 96px);
   }
 }
+
+/* 命令和输出是不可执行的纯文本；长行换行，滚动限制在输出区域。 */
+.tool-item > p,
+.approval code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.command-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+  padding: 12px;
+  background: #f4f6f6;
+  border-radius: 8px;
+}

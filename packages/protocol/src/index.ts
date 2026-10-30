@@ -126,7 +126,25 @@ export const ChatSnapshot = z
               "cancelled",
             ]),
             detail: z.string(),
-
+            // 命令输出保持有界，按快照增量频率投影；不暴露进程句柄或任意IPC。
+            execution: z
+              .object({
+                execution_id: z.string().uuid(),
+                status: z.enum([
+                  "running",
+                  "exited",
+                  "cancelled",
+                  "timed_out",
+                  "output_limit",
+                  "spawn_failed",
+                ]),
+                exit_code: z.number().int().nullable(),
+                signal: z.string().nullable(),
+                output: z.string().max(32776),
+                truncated: z.boolean(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )
@@ -135,6 +153,7 @@ export const ChatSnapshot = z
       .object({
         id: z.string().uuid(),
         path: z.string(),
+        kind: z.enum(["read_file", "exec_command"]),
       })
       .strict()
       .nullable(),
@@ -191,6 +210,14 @@ export const RuntimeContext = z
   })
   .strict();
 export const RuntimeRequest = z.discriminatedUnion("type", [
+  // 仅Main持有父端口；退出前让Runtime清理自己启动的命令进程组。
+  z
+    .object({
+      version: z.literal(1),
+      id: z.string().uuid(),
+      type: z.literal("runtime.shutdown"),
+    })
+    .strict(),
   z
     .object({
       version: z.literal(1),

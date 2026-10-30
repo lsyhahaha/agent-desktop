@@ -419,9 +419,19 @@ export function App() {
                               {toolLabels[tool.state]}
                             </span>
                           </div>
-                          <p>{tool.path || "路径未通过校验"}</p>
+                          <p>{tool.path || "参数未通过校验"}</p>
                           {tool.detail && <small>{tool.detail}</small>}
-
+                          {tool.execution && (
+                            <details open={tool.execution.status === "running"}>
+                              <summary>命令输出</summary>
+                              <pre className="command-output">
+                                {tool.execution.output || "（暂无输出）"}
+                                {tool.execution.truncated
+                                  ? "\n[输出达到上限，命令已终止]"
+                                  : ""}
+                              </pre>
+                            </details>
+                          )}
                         </div>
                       ))}
                     </section>
@@ -433,9 +443,17 @@ export function App() {
                     >
                       <div className="approval-icon">◇</div>
                       <div>
-                        <h3 id="approval-heading">允许读取这个文件吗？</h3>
+                        <h3 id="approval-heading">
+                          {agent.chat.interaction.kind === "exec_command"
+                            ? "允许执行这个命令吗？"
+                            : "允许读取这个文件吗？"}
+                        </h3>
                         <code>{agent.chat.interaction.path}</code>
-                        <p>文件内容会发送到 DeepSeek。本次仅允许读取该文件，最多32KiB，不包含写入或命令执行权限。</p>
+                        <p>
+                          {agent.chat.interaction.kind === "exec_command"
+                            ? "命令在只读沙箱中运行，禁止写入、删除和网络；可读取项目文件，输出会发送到 DeepSeek。最多60秒、32KiB输出，停止任务会终止命令。"
+                            : "文件内容会发送到 DeepSeek。本次仅允许读取该文件，最多32KiB，不包含写入或命令执行权限。"}
+                        </p>
                         <div className="approval-actions">
                           <button
                             onClick={() => void approve(false)}
@@ -448,7 +466,9 @@ export function App() {
                             onClick={() => void approve(true)}
                             disabled={approvalPending}
                           >
-允许本次读取
+                            {agent.chat.interaction.kind === "exec_command"
+                              ? "允许本次执行"
+                              : "允许本次读取"}
                           </button>
                         </div>
                       </div>
@@ -515,7 +535,7 @@ export function App() {
                   <span className="context-divider" />
                   <span className="context-hint">
                     {agent.workspace
-                      ? "仅在项目内读取文件"
+                      ? "项目只读 · 命令沙箱"
                       : "普通对话无需选择项目"}
                   </span>
                 </div>

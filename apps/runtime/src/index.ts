@@ -1,5 +1,6 @@
 import { RuntimeRequest } from "@protocol";
 import { Sessions } from "./sessions";
+import { stopAllCommands } from "./exec-command";
 const port = process.parentPort;
 if (!port) throw new Error("Runtime requires parent port");
 const sessions = new Sessions((snapshot) =>
@@ -13,6 +14,10 @@ port.on("message", ({ data }: { data: unknown }) => {
   }
   const request = parsed.data;
   try {
+    if (request.type === "runtime.shutdown") {
+      stopAllCommands();
+      process.exit(0);
+    }
     const payload =
       request.type === "runtime.ping"
         ? {

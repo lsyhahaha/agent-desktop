@@ -24,6 +24,8 @@ export class RuntimeHost {
     const child = utilityProcess.fork(this.entry, [], {
       serviceName: "Agent Desktop Runtime",
       env: {
+        // SDK内部用which查找shell；固定系统PATH，不继承用户目录或凭据。
+        PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
         NODE_ENV:
           process.env.NODE_ENV === "development" ? "development" : "production",
       },
@@ -111,9 +113,23 @@ export class RuntimeHost {
     const child = this.child;
     this.child = undefined;
     this.rejectPending(new Error("Application closing"));
-    child?.kill();
+    if (child) {
+      // 先通知受信Runtime杀掉自有命令进程组；超时兜底终止Runtime，避免应用退出卡住。
+      const fallback = setTimeout(() => child.kill(), 2000);
+      fallback.unref();
+      child.once("exit", () => clearTimeout(fallback));
+      try {
+        child.postMessage({
+          version: 1,
+          id: randomUUID(),
+          type: "runtime.shutdown",
+        });
+      } catch {
+        clearTimeout(fallback);
+        child.kill();
+      }
+    }
   }
-
   private rejectPending(error: Error): void {
     for (const item of this.pending.values()) {
       clearTimeout(item.timer);

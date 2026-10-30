@@ -1,0 +1,90 @@
+{
+  "root": "/private/tmp/agent-command-live-4QgpIl",
+  "cases": [
+    {
+      "name": "git-history",
+      "status": "exited",
+      "exitCode": 0,
+      "updates": 3,
+      "output": "8deb6a2 fixture marker\n"
+    },
+    {
+      "name": "pipe-and-read",
+      "status": "exited",
+      "exitCode": 0,
+      "updates": 3,
+      "output": "KEEP-5297"
+    },
+    {
+      "name": "deny-rm",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "rm: keep.txt: Operation not permitted\n"
+    },
+    {
+      "name": "deny-overwrite",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "/bin/bash: keep.txt: Operation not permitted\n"
+    },
+    {
+      "name": "deny-unlink-via-perl",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "Operation not permitted at -e line 1.\n"
+    },
+    {
+      "name": "deny-outside",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "cat: ../agent-command-live-4QgpIl-outside: Operation not permitted\n"
+    },
+    {
+      "name": "deny-symlink",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "cat: escape: Operation not permitted\n"
+    },
+    {
+      "name": "deny-credentials",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 3,
+      "output": "cat: .env: Operation not permitted\n"
+    },
+    {
+      "name": "deny-network",
+      "status": "exited",
+      "exitCode": 1,
+      "updates": 2,
+      "output": ""
+    },
+    {
+      "name": "timeout",
+      "status": "timed_out",
+      "exitCode": null,
+      "updates": 4,
+      "output": "START"
+    },
+    {
+      "name": "output-cap",
+      "status": "output_limit",
+      "exitCode": null,
+      "updates": 4,
+      "output": "1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n1234567890\n123"
+    },
+    {
+      "name": "cancel-and-dispose",
+      "passed": true
+    },
+    {
+      "name": "stop-process",
+      "passed": true
+    }
+  ]
+}
