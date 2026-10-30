@@ -21,11 +21,11 @@ npm start
 
 ## 已实现
 
-- DeepSeek流式对话、取消及逐次授权read_file。
-- 新建、切换、改名、搜索内存任务，按任务隔离草稿、上下文和工作区。
-- 最多20个会话，单轮6次模型请求/12次工具/120秒。
+- DeepSeek流式对话、受限read_file及内存多任务管理。
+- list_directory有界探索当前工作区；先目录再自主选README、配置和核心文件分析。
+- 区分本轮执行结束和用户确认任务完成。
 
-重启不恢复历史；没有目录枚举、命令执行和持久化。会话调整验收见docs/session-product-adjustments.md。
+文件读取仍逐次审批，路径及大小限制、取消和预算不变。尚无命令执行、文件修改和持久化；项目探索验收见docs/project-exploration-verification.md。
 
 ## 目录
 

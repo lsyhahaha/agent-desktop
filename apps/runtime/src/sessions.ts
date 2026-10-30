@@ -11,6 +11,7 @@ type Entry = {
   id: string;
   title: string;
   customTitle: boolean;
+  taskStatus: "open" | "completed";
   updatedAt: number;
   workspace: WorkspaceSelection;
   agent: Agent;
@@ -30,6 +31,7 @@ export class Sessions {
       id,
       title: "新任务",
       customTitle: false,
+      taskStatus: "open",
       updatedAt: Date.now(),
       workspace,
       agent: new Agent(() => {
@@ -51,6 +53,7 @@ export class Sessions {
     return {
       revision: this.revision,
       sessionId: entry.id,
+      taskStatus: entry.taskStatus,
       workspace: entry.workspace,
       chat: entry.agent.snapshot,
       sessions: [...this.entries.values()]
@@ -59,6 +62,7 @@ export class Sessions {
           id: e.id,
           title: e.title,
           state: e.agent.snapshot.state,
+          taskStatus: e.taskStatus,
           workspaceName: e.workspace?.name ?? null,
           updatedAt: e.updatedAt,
         }))
@@ -112,11 +116,23 @@ export class Sessions {
       this.publish();
       return this.snapshot();
     }
+    // 模型stop只表示执行结束；任务完成必须由用户确认，后续追问会重新打开任务。
+    if (cmd.type === "complete_task") {
+      if (
+        cmd.sessionId !== current.id ||
+        current.agent.snapshot.state !== "completed"
+      )
+        throw new Error("仅能确认已结束的当前任务");
+      current.taskStatus = "completed";
+      this.publish();
+      return this.snapshot();
+    }
     if (cmd.type === "send") {
       if (cmd.sessionId !== current.id)
         throw new Error("会话已切换，拒绝发送到错误会话");
       if (!context || context.root !== (current.workspace?.path ?? null))
         throw new Error("工作区授权不一致，请重新选择项目");
+      current.taskStatus = "open";
       if (!current.customTitle && !current.agent.snapshot.messages.length)
         current.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
     }

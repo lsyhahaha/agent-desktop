@@ -65,6 +65,9 @@ export const ChatCommand = z.discriminatedUnion("type", [
   z.object({ type: z.literal("clear") }).strict(),
   z.object({ type: z.literal("new") }).strict(),
   z
+    .object({ type: z.literal("complete_task"), sessionId: z.string().uuid() })
+    .strict(),
+  z
     .object({ type: z.literal("select"), sessionId: z.string().uuid() })
     .strict(),
   z
@@ -155,6 +158,7 @@ export const SessionSnapshot = z
   .object({
     revision: z.number().int().nonnegative(),
     sessionId: z.string().uuid(),
+    taskStatus: z.enum(["open", "completed"]),
     workspace: WorkspaceSelection,
     chat: ChatSnapshot,
     sessions: z
@@ -164,7 +168,8 @@ export const SessionSnapshot = z
             id: z.string().uuid(),
             title: z.string().min(1).max(60),
             state: ChatSnapshot.shape.state,
-                    workspaceName: z.string().nullable(),
+            taskStatus: z.enum(["open", "completed"]),
+            workspaceName: z.string().nullable(),
             updatedAt: z.number(),
           })
           .strict(),

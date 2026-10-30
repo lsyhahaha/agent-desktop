@@ -325,7 +325,11 @@ export function App() {
               </button>
             )}
             <span className={"run-status " + (agent.active ? "busy" : "")}>
-              {runLabels[agent.chat?.state ?? "idle"]}
+              {agent.taskStatus === "completed"
+                ? "任务已确认完成"
+                : agent.chat?.tools.some((tool) => tool.state === "running")
+                  ? "工具执行中"
+                  : runLabels[agent.chat?.state ?? "idle"]}
             </span>
           </div>
         </header>
@@ -375,8 +379,8 @@ export function App() {
                       key={message.id}
                     >
                       <div className="message-heading">
-                        <span className="avatar">
-                          {message.role === "user" ? "你" : "A"}
+                        <span className="avatar" aria-hidden="true">
+                          {message.role === "user" ? "○" : "A"}
                         </span>
                         <strong>
                           {message.role === "user" ? "你" : "Agent Desktop"}
@@ -392,7 +396,7 @@ export function App() {
                         )}
                       </div>
                       <div className="message-content">
-                        {message.text ||
+                        {message.text.replace(/\n{3,}/g, "\n\n") ||
                           (message.state === "streaming"
                             ? "正在等待模型…"
                             : "本轮未产生文本")}
@@ -454,6 +458,28 @@ export function App() {
                     <p className="run-note">
                       本轮已停止。未完成的输出不会加入后续模型上下文。
                     </p>
+                  )}
+                  {agent.chat?.state === "completed" && (
+                    <div className="task-outcome">
+                      <span>
+                        {agent.taskStatus === "completed"
+                          ? "任务结果已由你确认完成。"
+                          : "本轮执行已结束，任务结果尚待你确认。"}
+                      </span>
+                      {agent.taskStatus !== "completed" && agent.sessionId && (
+                        <button
+                          onClick={() =>
+                            void agent.command({
+                              type: "complete_task",
+                              sessionId: agent.sessionId!,
+                            })
+                          }
+                          disabled={agent.pending}
+                        >
+                          确认任务完成
+                        </button>
+                      )}
+                    </div>
                   )}
                   {agent.chat?.state === "completed" && (
                     <div className="usage">

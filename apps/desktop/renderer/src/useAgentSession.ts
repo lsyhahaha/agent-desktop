@@ -143,6 +143,7 @@ export function useAgentSession() {
     status,
     sessionId: state?.sessionId ?? null,
     sessions,
+    taskStatus: state?.taskStatus ?? "open",
     workspace,
     settings,
     settingsReady,
