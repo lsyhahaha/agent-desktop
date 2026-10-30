@@ -1,0 +1,36 @@
+{
+  "name": "agent-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first desktop coding agent",
+  "type": "module",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "apps/desktop",
+    "apps/runtime",
+    "packages/protocol"
+  ],
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-vite": "5.0.0",
+    "vite": "^7.0.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
