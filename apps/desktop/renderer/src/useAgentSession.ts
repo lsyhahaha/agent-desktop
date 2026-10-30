@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ChatSnapshot, DesktopStatus, ModelSettings } from "@protocol";
+import type { SessionSnapshot, DesktopStatus, ModelSettings } from "@protocol";
 
 /** 窗口只维护 Runtime 的显示投影；不在 React 中复制模型循环、文件权限或凭据存储。 */
 export function useAgentSession() {
@@ -9,9 +9,10 @@ export function useAgentSession() {
     model: "deepseek-flash",
     hasKey: false,
   });
-  const [state, setState] = useState<ChatSnapshot | null>(null);
-  const chat = state;
-  const [workspace, setWorkspace] = useState<import("@protocol").WorkspaceSelection>(null);
+  const [state, setState] = useState<SessionSnapshot | null>(null);
+  const chat = state?.chat ?? null;
+  const workspace = state?.workspace ?? null;
+  const sessions = state?.sessions ?? [];
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [choosing, setChoosing] = useState(false);
@@ -24,7 +25,7 @@ export function useAgentSession() {
   );
   // 命令回包与异步事件可能交错，旧 revision 不得覆盖已经显示的新状态。
   const apply = useCallback(
-    (next: ChatSnapshot) =>
+    (next: SessionSnapshot) =>
       setState((previous) =>
         !previous || next.revision >= previous.revision ? next : previous,
       ),
@@ -32,7 +33,7 @@ export function useAgentSession() {
   );
   useEffect(() => {
     let disposed = false;
-    const receive = (snapshot: ChatSnapshot) => {
+    const receive = (snapshot: SessionSnapshot) => {
       if (!disposed) apply(snapshot);
     };
     const report = (e: unknown) => {
@@ -64,6 +65,7 @@ export function useAgentSession() {
   /** 返回是否已接纳，只有成功 ACK 才能清空用户尚未发送的输入。 */
   async function send(text: string): Promise<boolean> {
     if (
+      !state?.sessionId ||
       !text.trim() ||
       pending ||
       active ||
@@ -79,6 +81,7 @@ export function useAgentSession() {
         await window.desktop.chat({
           type: "send",
           text,
+          sessionId: state.sessionId,
         }),
       );
       return true;
@@ -113,7 +116,6 @@ export function useAgentSession() {
     try {
       const selected = await window.desktop.selectWorkspace();
       if (selected) {
-        setWorkspace(selected);
         apply(await window.desktop.chat({ type: "snapshot" }));
       }
     } catch (e) {
@@ -139,6 +141,8 @@ export function useAgentSession() {
   }
   return {
     status,
+    sessionId: state?.sessionId ?? null,
+    sessions,
     workspace,
     settings,
     settingsReady,

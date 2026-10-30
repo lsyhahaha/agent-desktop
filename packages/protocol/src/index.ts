@@ -33,8 +33,8 @@ export interface DesktopBridge {
   selectWorkspace(): Promise<WorkspaceSelection>;
   getSettings(): Promise<ModelSettings>;
   saveSettings(value: unknown): Promise<ModelSettings>;
-  chat(value: ChatCommand): Promise<ChatSnapshot>;
-  onChat(callback: (snapshot: ChatSnapshot) => void): () => void;
+  chat(value: ChatCommand): Promise<SessionSnapshot>;
+  onChat(callback: (snapshot: SessionSnapshot) => void): () => void;
 }
 
 export const ModelSettings = z
@@ -57,11 +57,23 @@ export const ChatCommand = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("send"),
+      sessionId: z.string().uuid(),
       text: z.string().trim().min(1).max(16000),
     })
     .strict(),
   z.object({ type: z.literal("cancel") }).strict(),
   z.object({ type: z.literal("clear") }).strict(),
+  z.object({ type: z.literal("new") }).strict(),
+  z
+    .object({ type: z.literal("select"), sessionId: z.string().uuid() })
+    .strict(),
+  z
+    .object({
+      type: z.literal("rename"),
+      sessionId: z.string().uuid(),
+      title: z.string().trim().min(1).max(60),
+    })
+    .strict(),
   z
     .object({
       type: z.literal("approve"),
@@ -138,6 +150,30 @@ export const ChatSnapshot = z
   .strict();
 export type ChatSnapshot = z.infer<typeof ChatSnapshot>;
 
+/** 会话索引由 Runtime 拥有；窗口只接收当前会话投影，不接触其他会话的模型上下文。 */
+export const SessionSnapshot = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    sessionId: z.string().uuid(),
+    workspace: WorkspaceSelection,
+    chat: ChatSnapshot,
+    sessions: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            title: z.string().min(1).max(60),
+            state: ChatSnapshot.shape.state,
+                    workspaceName: z.string().nullable(),
+            updatedAt: z.number(),
+          })
+          .strict(),
+      )
+      .max(20),
+  })
+  .strict();
+export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
+
 export const RuntimeContext = z
   .object({
     config: z
@@ -164,6 +200,7 @@ export const RuntimeRequest = z.discriminatedUnion("type", [
       type: z.literal("agent.command"),
       command: ChatCommand,
       context: RuntimeContext.optional(),
+      workspace: WorkspaceSelection.optional(),
     })
     .strict(),
 ]);
@@ -180,6 +217,6 @@ export const RuntimeEvent = z
   .object({
     version: z.literal(1),
     type: z.literal("agent.snapshot"),
-    payload: ChatSnapshot,
+    payload: SessionSnapshot,
   })
   .strict();

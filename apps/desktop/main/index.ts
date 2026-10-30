@@ -20,7 +20,9 @@ let dispatching = false;
 let selectedRoot: string | null = null;
 const settings = new Settings();
 const runtime = new RuntimeHost(join(here, "runtime.js"), (snapshot) => {
-  active = ["running", "waiting_user"].includes(snapshot.state);
+  active = ["running", "waiting_user"].includes(snapshot.chat.state);
+  // 工作区只来自 Main 的原生目录授权或 Runtime 已保存的会话，不接受前端路径。
+  selectedRoot = snapshot.workspace?.path ?? null;
   if (window && !window.isDestroyed())
     window.webContents.send(channels.chatEvent, snapshot);
 });
@@ -151,8 +153,12 @@ else {
         if (result.canceled || !result.filePaths[0]) return null;
         if (active || dispatching) throw new Error("运行期间不能切换工作区");
         const path = await realpath(result.filePaths[0]);
-        // 唯一工作区由原生目录选择授权，切换时清空单会话上下文。
-        if (selectedRoot !== path) await runtime.chat({ type: "clear" });
+        // 选择新项目开启独立会话，保留旧项目上下文与授权；同一项目不重置历史。
+        if (selectedRoot !== path)
+          await runtime.chat({ type: "new" }, undefined, {
+            name: basename(path),
+            path,
+          });
         selectedRoot = path;
         return WorkspaceSelection.parse({ name: basename(path), path });
       });

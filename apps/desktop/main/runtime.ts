@@ -4,7 +4,7 @@ import {
   RuntimeResponse,
   RuntimeEvent,
   RuntimeStatus,
-  ChatSnapshot,
+  SessionSnapshot,
   type DesktopStatus,
 } from "@protocol";
 type Pending = {
@@ -17,7 +17,7 @@ export class RuntimeHost {
   private pending = new Map<string, Pending>();
   constructor(
     private readonly entry: string,
-    private readonly onSnapshot: (value: ChatSnapshot) => void,
+    private readonly onSnapshot: (value: SessionSnapshot) => void,
   ) {}
   start(): void {
     if (this.child) return;
@@ -96,12 +96,14 @@ export class RuntimeHost {
   async chat(
     command: unknown,
     context?: unknown,
-  ): Promise<ChatSnapshot> {
-    return ChatSnapshot.parse(
+    workspace?: unknown,
+  ): Promise<SessionSnapshot> {
+    return SessionSnapshot.parse(
       await this.request({
         type: "agent.command",
         command,
         ...(context ? { context } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
       }),
     );
   }

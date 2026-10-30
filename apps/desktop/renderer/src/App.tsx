@@ -25,8 +25,21 @@ export function App() {
   const [page, setPage] = useState<"chat" | "settings">("chat");
   const [text, setText] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [searching, setSearching] = useState(false),
+    [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<string | null>(null),
+    [title, setTitle] = useState("");
+  const drafts = useRef(new Map<string, string>());
   const composer = useRef<HTMLTextAreaElement>(null);
-  function changeText(value: string) { setText(value); }
+  // 草稿按会话隔离，切换只改变显示，不丢弃旧任务或把草稿写进模型上下文。
+  useEffect(() => {
+    setText(drafts.current.get(agent.sessionId ?? "") ?? "");
+    follow.current = true;
+  }, [agent.sessionId]);
+  function changeText(value: string) {
+    setText(value);
+    if (agent.sessionId) drafts.current.set(agent.sessionId, value);
+  }
   const [approvalPending, setApprovalPending] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -35,19 +48,52 @@ export function App() {
   useEffect(() => {
     if (follow.current && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
-  }, [agent.chat?.revision, page]);
+  }, [agent.chat?.revision, agent.sessionId, page]);
   async function send() {
     if (await agent.send(text)) {
       changeText("");
       follow.current = true;
     }
   }
-  /** 单会话阶段新建会清空内存上下文，运行中不可清空。 */
+  /** 新任务创建/复用独立草稿，旧任务由 Runtime 保留，不再调用 clear。 */
   async function newChat() {
     if (agent.active || agent.pending || clearing) return;
     setClearing(true);
-    try { if (await agent.command({type: "clear"})) { setText(""); setPage("chat"); follow.current = true; } }
-    finally { setClearing(false); }
+    try {
+      if (await agent.command({ type: "new" })) {
+        setPage("chat");
+        setEditing(null);
+        setQuery("");
+        follow.current = true;
+        composer.current?.focus();
+      }
+    } finally {
+      setClearing(false);
+    }
+  }
+  async function selectTask(id: string) {
+    if (agent.active || agent.pending || clearing) return;
+    setClearing(true);
+    try {
+      if (await agent.command({ type: "select", sessionId: id })) {
+        setPage("chat");
+        setEditing(null);
+        follow.current = true;
+      }
+    } finally {
+      setClearing(false);
+    }
+  }
+  async function renameTask() {
+    if (!editing || !title.trim() || agent.active || agent.pending) return;
+    if (
+      await agent.command({
+        type: "rename",
+        sessionId: editing,
+        title: title.trim(),
+      })
+    )
+      setEditing(null);
   }
   // 快捷键仅在工作区生效；设置页的凭据编辑不被任务快捷键打断。
   const newTaskAction = useRef(newChat);
@@ -77,7 +123,12 @@ export function App() {
       setApprovalPending(false);
     }
   }
-  const currentTitle = agent.chat?.messages.find(message => message.role === "user")?.text.slice(0, 32) ?? "新任务";
+  const currentTitle =
+    agent.sessions.find((item) => item.id === agent.sessionId)?.title ??
+    "新任务";
+  const shownTasks = agent.sessions.filter((item) =>
+    item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
   return (
     <div className="desktop-shell">
       <aside className="sidebar">
@@ -105,8 +156,118 @@ export function App() {
               <span>⊕</span> 新建任务<kbd>⌘ N</kbd>
             </button>
             <div className="sidebar-divider" />
-            <div className="group-label nav-label">任务列表</div>
-            {!empty && <div className="task-item selected">{currentTitle}</div>}
+            <div className="group-label nav-label task-list-heading">
+              <span>
+                任务列表 <span className="count">{agent.sessions.length}</span>
+              </span>
+              <button
+                aria-label="搜索任务"
+                title="搜索任务"
+                onClick={() => {
+                  setSearching(!searching);
+                  setQuery("");
+                }}
+              >
+                ⌕
+              </button>
+            </div>
+            {searching && (
+              <input
+                className="task-search"
+                aria-label="搜索任务名称"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索任务名称"
+                autoFocus
+              />
+            )}
+            <div className="task-list">
+              {!shownTasks.length ? (
+                <p className="empty-list">
+                  {query ? "没有匹配的任务" : "发送第一条消息后显示任务"}
+                </p>
+              ) : (
+                shownTasks.map((item) => (
+                  <div
+                    className={
+                      "task-row " +
+                      (item.id === agent.sessionId ? "selected" : "")
+                    }
+                    key={item.id}
+                  >
+                    {editing === item.id ? (
+                      <form
+                        className="task-rename"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void renameTask();
+                        }}
+                      >
+                        <input
+                          aria-label="任务名称"
+                          maxLength={60}
+                          value={title}
+                          onChange={(event) => setTitle(event.target.value)}
+                          autoFocus
+                        />
+                        <button
+                          aria-label="保存任务名称"
+                          disabled={!title.trim() || agent.pending}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          aria-label="取消重命名"
+                          type="button"
+                          onClick={() => setEditing(null)}
+                        >
+                          ×
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          className="task-item"
+                          aria-current={
+                            item.id === agent.sessionId ? "true" : undefined
+                          }
+                          disabled={agent.active || agent.pending || clearing}
+                          title={
+                            item.title +
+                            (item.workspaceName
+                              ? " · " + item.workspaceName
+                              : "")
+                          }
+                          onClick={() => void selectTask(item.id)}
+                        >
+                          <span
+                            className={
+                              "task-dot " +
+                              (["running", "waiting_user"].includes(item.state)
+                                ? "live"
+                                : "")
+                            }
+                          />
+                          <span>{item.title}</span>
+                        </button>
+                        <button
+                          className="task-more"
+                          aria-label={"重命名 " + item.title}
+                          title="重命名任务"
+                          disabled={agent.active || agent.pending}
+                          onClick={() => {
+                            setEditing(item.id);
+                            setTitle(item.title);
+                          }}
+                        >
+                          ⋯
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
             <div className="sidebar-context">
               <span className="group-label">项目</span>
               <button

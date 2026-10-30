@@ -1,8 +1,8 @@
 import { RuntimeRequest } from "@protocol";
-import { Agent } from "./agent";
+import { Sessions } from "./sessions";
 const port = process.parentPort;
 if (!port) throw new Error("Runtime requires parent port");
-const agent = new Agent((snapshot) =>
+const sessions = new Sessions((snapshot) =>
   port.postMessage({ version: 1, type: "agent.snapshot", payload: snapshot }),
 );
 port.on("message", ({ data }: { data: unknown }) => {
@@ -21,7 +21,7 @@ port.on("message", ({ data }: { data: unknown }) => {
             nodeVersion: process.versions.node,
             uptimeSeconds: process.uptime(),
           }
-        : agent.command(request.command, request.context);
+        : sessions.command(request.command, request.context, request.workspace);
     port.postMessage({
       version: 1,
       id: request.id,

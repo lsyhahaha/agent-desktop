@@ -4,7 +4,7 @@ import {
   ModelSettings,
   SaveSettings,
   ChatCommand,
-  ChatSnapshot,
+  SessionSnapshot,
   DesktopStatus,
   WorkspaceSelection,
   type DesktopBridge,
@@ -20,12 +20,12 @@ const bridge: DesktopBridge = Object.freeze({
       ),
     ),
   chat: async (value: unknown) =>
-    ChatSnapshot.parse(
+    SessionSnapshot.parse(
       await ipcRenderer.invoke(channels.chat, ChatCommand.parse(value)),
     ),
-  onChat: (callback: (snapshot: ChatSnapshot) => void) => {
+  onChat: (callback: (snapshot: SessionSnapshot) => void) => {
     const listener = (_event: unknown, raw: unknown) => {
-      const result = ChatSnapshot.safeParse(raw);
+      const result = SessionSnapshot.safeParse(raw);
       if (result.success) callback(result.data);
     };
     ipcRenderer.on(channels.chatEvent, listener);
