@@ -10,6 +10,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, basename } from "node:path";
 import { channels, DesktopStatus, WorkspaceSelection } from "@protocol";
 import { RuntimeHost } from "./runtime";
+import { Settings } from "./settings";
+import { SaveSettings } from "@protocol";
+const settings = new Settings();
 const here = dirname(fileURLToPath(import.meta.url));
 let window: BrowserWindow | undefined;
 const runtime = new RuntimeHost(join(here, "runtime.js"));
@@ -83,12 +86,15 @@ else {
   });
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       session.defaultSession.setPermissionRequestHandler(
         (_contents, _permission, callback) => callback(false),
       );
       session.defaultSession.setPermissionCheckHandler(() => false);
+      await settings.load();
       runtime.start();
+      ipcMain.handle(channels.settingsGet, event => { assertSender(event); return settings.view(); });
+      ipcMain.handle(channels.settingsSave, (event, raw: unknown) => { assertSender(event); return settings.save(SaveSettings.parse(raw)); });
       ipcMain.handle(channels.status, async (event) => {
         assertSender(event);
         return DesktopStatus.parse({

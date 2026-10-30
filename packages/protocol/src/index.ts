@@ -2,6 +2,8 @@ import { z } from "zod";
 export const channels = {
   status: "desktop:status",
   workspace: "desktop:select-workspace",
+  settingsGet: "model:settings",
+  settingsSave: "model:save",
 } as const;
 export const RuntimeRequest = z
   .object({
@@ -42,4 +44,22 @@ export type WorkspaceSelection = z.infer<typeof WorkspaceSelection>;
 export interface DesktopBridge {
   getStatus(): Promise<DesktopStatus>;
   selectWorkspace(): Promise<WorkspaceSelection>;
+  getSettings(): Promise<ModelSettings>;
+  saveSettings(value: unknown): Promise<ModelSettings>;
 }
+
+export const ModelSettings = z
+  .object({ model: z.string().min(1).max(100), hasKey: z.boolean() })
+  .strict();
+export type ModelSettings = z.infer<typeof ModelSettings>;
+export const SaveSettings = z
+  .object({
+    model: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[a-zA-Z0-9._/-]+$/),
+    apiKey: z.string().trim().max(512).optional(),
+  })
+  .strict();
