@@ -1,29 +1,47 @@
 import { RuntimeRequest } from "@protocol";
+import { Agent } from "./agent";
 const port = process.parentPort;
-if (!port) throw new Error("Runtime requires an Electron parent port");
+if (!port) throw new Error("Runtime requires parent port");
+const agent = new Agent((snapshot) =>
+  port.postMessage({ version: 1, type: "agent.snapshot", payload: snapshot }),
+);
 port.on("message", ({ data }: { data: unknown }) => {
-  const result = RuntimeRequest.safeParse(data);
-  if (!result.success) {
-    console.warn("[runtime] rejected invalid message");
+  const parsed = RuntimeRequest.safeParse(data);
+  if (!parsed.success) {
+    console.warn("[runtime] invalid request");
     return;
   }
-  port.postMessage({
-    version: 1,
-    id: result.data.id,
-    type: "runtime.status",
-    payload: {
-      state: "ready",
-      pid: process.pid,
-      nodeVersion: process.versions.node,
-      uptimeSeconds: process.uptime(),
-    },
-  });
+  const request = parsed.data;
+  try {
+    const payload =
+      request.type === "runtime.ping"
+        ? {
+            state: "ready",
+            pid: process.pid,
+            nodeVersion: process.versions.node,
+            uptimeSeconds: process.uptime(),
+          }
+        : agent.command(request.command, request.context);
+    port.postMessage({
+      version: 1,
+      id: request.id,
+      type: "rpc.result",
+      payload,
+    });
+  } catch {
+    port.postMessage({
+      version: 1,
+      id: request.id,
+      type: "rpc.result",
+      error: "操作被拒绝：请确认配置、会话状态和输入上限",
+    });
+  }
 });
-process.on("uncaughtException", (error) => {
-  console.error("[runtime] uncaught exception", error);
+process.on("uncaughtException", () => {
+  console.error("[runtime] uncaught exception");
   process.exit(1);
 });
-process.on("unhandledRejection", (error) => {
-  console.error("[runtime] unhandled rejection", error);
+process.on("unhandledRejection", () => {
+  console.error("[runtime] unhandled rejection");
   process.exit(1);
 });

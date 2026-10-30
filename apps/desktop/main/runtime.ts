@@ -1,15 +1,24 @@
 import { utilityProcess, type UtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
-import { RuntimeResponse, type DesktopStatus } from "@protocol";
+import {
+  RuntimeResponse,
+  RuntimeEvent,
+  RuntimeStatus,
+  ChatSnapshot,
+  type DesktopStatus,
+} from "@protocol";
 type Pending = {
-  resolve: (value: DesktopStatus["runtime"]) => void;
+  resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
 export class RuntimeHost {
   private child: UtilityProcess | undefined;
   private pending = new Map<string, Pending>();
-  constructor(private readonly entry: string) {}
+  constructor(
+    private readonly entry: string,
+    private readonly onSnapshot: (value: ChatSnapshot) => void,
+  ) {}
   start(): void {
     if (this.child) return;
     const child = utilityProcess.fork(this.entry, [], {
@@ -28,6 +37,11 @@ export class RuntimeHost {
       console.error("[runtime]", chunk.toString().trim()),
     );
     child.on("message", (data: unknown) => {
+      const event = RuntimeEvent.safeParse(data);
+      if (event.success) {
+        this.onSnapshot(event.data.payload);
+        return;
+      }
       const parsed = RuntimeResponse.safeParse(data);
       if (!parsed.success) {
         console.warn("[runtime] invalid response");
@@ -37,7 +51,8 @@ export class RuntimeHost {
       if (!item) return;
       clearTimeout(item.timer);
       this.pending.delete(parsed.data.id);
-      item.resolve(parsed.data.payload);
+      if (parsed.data.error) item.reject(new Error(parsed.data.error));
+      else item.resolve(parsed.data.payload);
     });
     child.on("exit", (code) => {
       if (this.child === child) {
@@ -47,11 +62,16 @@ export class RuntimeHost {
       }
     });
   }
-  status(): Promise<DesktopStatus["runtime"]> {
+  async status(): Promise<DesktopStatus["runtime"]> {
+    return RuntimeStatus.parse(await this.request({ type: "runtime.ping" }));
+  }
+  private request(fields: Record<string, unknown>): Promise<unknown> {
     if (!this.child)
       return Promise.reject(
         new Error("Runtime unavailable; restart the application"),
       );
+    if (this.pending.size >= 32)
+      return Promise.reject(new Error("Runtime 请求过多，请稍后重试"));
     const child = this.child,
       id = randomUUID();
     return new Promise((resolve, reject) => {
@@ -61,7 +81,7 @@ export class RuntimeHost {
       }, 5000);
       this.pending.set(id, { resolve, reject, timer });
       try {
-        child.postMessage({ version: 1, id, type: "runtime.ping" });
+        child.postMessage({ version: 1, id, ...fields });
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -73,12 +93,25 @@ export class RuntimeHost {
       }
     });
   }
+  async chat(
+    command: unknown,
+    context?: unknown,
+  ): Promise<ChatSnapshot> {
+    return ChatSnapshot.parse(
+      await this.request({
+        type: "agent.command",
+        command,
+        ...(context ? { context } : {}),
+      }),
+    );
+  }
   stop(): void {
     const child = this.child;
     this.child = undefined;
     this.rejectPending(new Error("Application closing"));
     child?.kill();
   }
+
   private rejectPending(error: Error): void {
     for (const item of this.pending.values()) {
       clearTimeout(item.timer);
