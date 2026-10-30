@@ -1,0 +1,155 @@
+import { useCallback, useEffect, useState } from "react";
+import type { ChatSnapshot, DesktopStatus, ModelSettings } from "@protocol";
+
+/** 窗口只维护 Runtime 的显示投影；不在 React 中复制模型循环、文件权限或凭据存储。 */
+export function useAgentSession() {
+  const [status, setStatus] = useState<DesktopStatus | null>(null);
+
+  const [settings, setSettings] = useState<ModelSettings>({
+    model: "deepseek-flash",
+    hasKey: false,
+  });
+  const [state, setState] = useState<ChatSnapshot | null>(null);
+  const chat = state;
+  const [workspace, setWorkspace] = useState<import("@protocol").WorkspaceSelection>(null);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
+  const active = !!chat && ["running", "waiting_user"].includes(chat.state);
+  const fail = useCallback(
+    (e: unknown) =>
+      setError(e instanceof Error ? e.message : "操作失败，请重试"),
+    [],
+  );
+  // 命令回包与异步事件可能交错，旧 revision 不得覆盖已经显示的新状态。
+  const apply = useCallback(
+    (next: ChatSnapshot) =>
+      setState((previous) =>
+        !previous || next.revision >= previous.revision ? next : previous,
+      ),
+    [],
+  );
+  useEffect(() => {
+    let disposed = false;
+    const receive = (snapshot: ChatSnapshot) => {
+      if (!disposed) apply(snapshot);
+    };
+    const report = (e: unknown) => {
+      if (!disposed) fail(e);
+    };
+    // 先监听再读快照，避免初始化期间遗漏状态；卸载只释放本窗口监听。
+    const stop = window.desktop.onChat(receive);
+    void window.desktop.chat({ type: "snapshot" }).then(receive).catch(report);
+    void window.desktop
+      .getStatus()
+      .then((value) => {
+        if (!disposed) setStatus(value);
+      })
+      .catch(report);
+    void window.desktop
+      .getSettings()
+      .then((value) => {
+        if (!disposed) {
+          setSettings(value);
+          setSettingsReady(true);
+        }
+      })
+      .catch(report);
+    return () => {
+      disposed = true;
+      stop();
+    };
+  }, [apply, fail]);
+  /** 返回是否已接纳，只有成功 ACK 才能清空用户尚未发送的输入。 */
+  async function send(text: string): Promise<boolean> {
+    if (
+      !text.trim() ||
+      pending ||
+      active ||
+      choosing ||
+      !settingsReady ||
+      !settings.hasKey
+    )
+      return false;
+    setPending(true);
+    setError("");
+    try {
+      apply(
+        await window.desktop.chat({
+          type: "send",
+          text,
+        }),
+      );
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    } finally {
+      setPending(false);
+    }
+  }
+  async function command(
+    value: Parameters<typeof window.desktop.chat>[0],
+  ): Promise<boolean> {
+    const switching = ["new", "select", "rename", "clear"].includes(value.type);
+    if (switching && (pending || active || choosing)) return false;
+    if (switching) setPending(true);
+    setError("");
+    try {
+      apply(await window.desktop.chat(value));
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    } finally {
+      if (switching) setPending(false);
+    }
+  }
+  async function choose() {
+    if (active || pending || choosing) return;
+    setChoosing(true);
+    setError("");
+    try {
+      const selected = await window.desktop.selectWorkspace();
+      if (selected) {
+        setWorkspace(selected);
+        apply(await window.desktop.chat({ type: "snapshot" }));
+      }
+    } catch (e) {
+      fail(e);
+    } finally {
+      setChoosing(false);
+    }
+  }
+  /** API Key 仅经受限配置接口提交；已保存密钥永远不从 Main 回传至 React。 */
+  async function save(model: string, apiKey: string) {
+    setError("");
+    try {
+      setSettings(
+        await window.desktop.saveSettings({
+          model,
+          ...(apiKey ? { apiKey } : {}),
+        }),
+      );
+    } catch (e) {
+      fail(e);
+      throw new Error("配置未保存，请查看页面提示");
+    }
+  }
+  return {
+    status,
+    workspace,
+    settings,
+    settingsReady,
+    chat,
+    error,
+    pending,
+    choosing,
+    active,
+    send,
+    command,
+    choose,
+    save,
+  };
+}

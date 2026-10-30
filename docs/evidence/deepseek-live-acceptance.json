@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-31",
+  "provider": "DeepSeek",
+  "model": "deepseek-flash",
+  "requestEndpoint": "https://api.deepseek.com/v1/chat/completions",
+  "credentialHandling": "Used the application credential flow; no plaintext key was read, logged, or copied.",
+  "checks": {
+    "liveReply": {
+      "result": "passed",
+      "expected": "CONNECTED-7319",
+      "observed": "CONNECTED-7319"
+    },
+    "multiTurnContext": {
+      "result": "passed",
+      "observed": "Recalled CONNECTED-7319 from the first user message; UI reported prompt 103 / completion 6 tokens for this follow-up."
+    },
+    "streaming": {
+      "result": "passed",
+      "observed": "Saw numbered text grow while the run state remained running."
+    },
+    "cancel": {
+      "result": "passed",
+      "observed": "Clicked Stop while streaming; UI changed to cancelled, marked partial output incomplete, and re-enabled input."
+    },
+    "readFile": {
+      "result": "passed",
+      "observed": "Real model requested README.md; UI reported read_file success, 183 bytes; final answer contained FILE-6284-PASS and npm run fixture-start. Approval action itself was not captured by automation during this first success run."
+    },
+    "readFileDeny": {
+      "result": "passed",
+      "observed": "Observed waiting_user interaction for DENY.md; clicked Deny; UI showed denied / 用户拒绝; model stated it did not receive the content and finished normally."
+    }
+  },
+  "limitsScope": "6 model steps and file-boundary limits were exercised in earlier controlled integration checks; this live run did not deliberately exhaust provider calls or total timeout."
+}
