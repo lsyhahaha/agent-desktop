@@ -31,7 +31,12 @@ export const EditInput = z
     content: z.string().max(32768),
   })
   .strict();
+export const SpawnAgentInput = z.object({ task: z.string().trim().min(1).max(4000) }).strict();
+export const ChildAgentInput = z.object({ agent_id: z.string().uuid() }).strict();
 export const interactiveDefinitions = [
+  ["spawn_agent", "启动一个独立的只读子Agent执行分析任务；不允许子Agent调用工具或修改文件。", SpawnAgentInput],
+  ["wait_agent", "等待指定子Agent完成并获取结果。", ChildAgentInput],
+  ["cancel_agent", "请求取消指定子Agent。", ChildAgentInput],
   ["update_plan", "创建或更新本轮计划；待办不代表已执行。", PlanInput],
   [
     "request_user_input",
