@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { realpath, access } from "node:fs/promises";
+import { constants } from "node:fs";
+import { dirname } from "node:path";
+import { protectRuntimeDirectory } from "./workspace-path";
 import {
   ChatCommand,
   type SessionSnapshot,
@@ -7,137 +11,246 @@ import {
 } from "@protocol";
 import type { z } from "zod";
 import { Agent } from "./agent";
-type Entry = {
-  id: string;
-  title: string;
-  customTitle: boolean;
-  taskStatus: "open" | "completed";
-  updatedAt: number;
-  workspace: WorkspaceSelection;
-  agent: Agent;
-};
+import { SessionStore } from "./storage";
+import type { SessionMeta } from "./storage-types";
 
-/** 轻量内存会话目录：复用 Agent 保存各自上下文；最多20个有内容的会话，不静默淘汰历史。 */
+type Entry = { meta: SessionMeta; agent: Agent; runs: SessionSnapshot["runs"] };
+/** 数据库保留全部会话，内存只加载当前Agent和20条索引；单个时刻仍只运行一个任务。 */
 export class Sessions {
-  private entries = new Map<string, Entry>();
-  private selected = "";
+  private entry: Entry | undefined;
   private revision = 0;
-  constructor(private emit: (snapshot: SessionSnapshot) => void) {
-    this.create(null);
+  private page = 0;
+  private summaries: SessionSnapshot["sessions"] = [];
+  private hasMore = false;
+  private inspected: SessionSnapshot["inspectedRun"] = null;
+  private storageError: string | null = null;
+  private store: SessionStore;
+  constructor(
+    private emit: (snapshot: SessionSnapshot) => void,
+    private readonly databasePath: string,
+  ) {
+    this.store = new SessionStore(databasePath, (message) => {
+      this.storageError = message;
+      this.entry?.agent.storageFailed();
+      if (this.entry) this.publish();
+    });
   }
-  private create(workspace: WorkspaceSelection) {
-    const id = randomUUID();
-    const entry: Entry = {
-      id,
+  async initialize() {
+    await this.store.request({ op: "recover" });
+    protectRuntimeDirectory(await realpath(dirname(this.databasePath)));
+    const selected = await this.store.selected();
+    await this.activate(selected ?? this.makeMeta(null));
+    await this.refresh();
+    this.publish();
+  }
+  private makeMeta(workspace: WorkspaceSelection): SessionMeta {
+    const now = Date.now();
+    return {
+      id: randomUUID(),
       title: "新任务",
       customTitle: false,
       taskStatus: "open",
-      updatedAt: Date.now(),
       workspace,
-      agent: new Agent(() => {
-        entry.updatedAt = Date.now();
-        this.publish();
-      }),
+      createdAt: now,
+      updatedAt: now,
     };
-    this.entries.set(id, entry);
-    this.selected = id;
-    return entry;
+  }
+  private async activate(meta: SessionMeta) {
+    // 先落盘选择状态，再读取；上一次会话必须已空闲，不能让后台写入改变当前选择。
+    await this.store.request({ op: "meta", meta });
+    const loaded = await this.store.load(meta.id);
+    const entry: Entry = {
+      meta: loaded.meta,
+      runs: loaded.runs,
+      agent: undefined!,
+    };
+    entry.agent = new Agent(
+      () => {
+        this.updateSummary(entry);
+        this.publish();
+      },
+      async (run) => {
+        await this.store.request({ op: "save", meta: entry.meta, run });
+        const summary = {
+          id: run.runId,
+          state: run.state,
+          toolCount: run.tools.length,
+          createdAt: run.createdAt,
+        };
+        const index = entry.runs.findIndex((r) => r.id === run.runId);
+        if (index < 0) entry.runs.push(summary);
+        else entry.runs[index] = summary;
+      },
+    );
+    entry.agent.restore(loaded.chat, loaded.history);
+    this.entry = entry;
+    this.inspected = null;
   }
   private current() {
-    const entry = this.entries.get(this.selected);
-    if (!entry) throw new Error("当前会话不存在");
-    return entry;
+    if (!this.entry) throw new Error("会话存储尚未就绪");
+    return this.entry;
+  }
+  private updateSummary(entry: Entry) {
+    const summary = this.summaries.find((s) => s.id === entry.meta.id);
+    if (summary) {
+      summary.state = entry.agent.snapshot.state;
+      summary.taskStatus = entry.meta.taskStatus;
+    }
+  }
+  private async refresh() {
+    const data = await this.store.page(this.page);
+    this.summaries = data.sessions;
+    this.hasMore = data.hasMore;
+    if (this.entry) this.updateSummary(this.entry);
   }
   snapshot(): SessionSnapshot {
     const entry = this.current();
     return {
       revision: this.revision,
-      sessionId: entry.id,
-      taskStatus: entry.taskStatus,
-      workspace: entry.workspace,
+      sessionId: entry.meta.id,
+      title: entry.meta.title,
+      taskStatus: entry.meta.taskStatus,
+      workspace: entry.meta.workspace,
+      sessionPage: this.page,
+      hasMoreSessions: this.hasMore,
+      storageError: this.storageError,
+      runs: entry.runs,
+      inspectedRun: this.inspected,
       chat: entry.agent.snapshot,
-      sessions: [...this.entries.values()]
-        .filter((e) => e.agent.snapshot.messages.length > 0)
-        .map((e) => ({
-          id: e.id,
-          title: e.title,
-          state: e.agent.snapshot.state,
-          taskStatus: e.taskStatus,
-          workspaceName: e.workspace?.name ?? null,
-          updatedAt: e.updatedAt,
-        }))
-        .sort((a, b) => b.updatedAt - a.updatedAt),
+      sessions: this.summaries,
     };
   }
   private publish() {
     this.revision++;
     this.emit(this.snapshot());
   }
-  /** 运行中只允许取消或回复当前审批，暂不支持后台并发会话，避免跨会话执行归属混乱。 */
-  command(
+  /** Runtime串行接纳变更；取消/审批绕过存储等待，防止磁盘慢时停止按钮失效。 */
+  async command(
     raw: unknown,
     context?: z.infer<typeof RuntimeContext>,
     workspace?: WorkspaceSelection,
-  ): SessionSnapshot {
-    const cmd = ChatCommand.parse(raw);
-    const current = this.current();
+  ): Promise<SessionSnapshot> {
+    const cmd = ChatCommand.parse(raw),
+      current = this.current();
     if (cmd.type === "snapshot") return this.snapshot();
-    if (current.agent.busy() && !["cancel", "approve"].includes(cmd.type))
-      throw new Error("请先停止当前任务");
+    if (cmd.type === "cancel" || cmd.type === "approve") {
+      await current.agent.command(cmd);
+      return this.snapshot();
+    }
+    if (this.storageError) throw new Error(this.storageError);
+    if (cmd.type === "inspect_run") {
+      if (cmd.sessionId !== current.meta.id) throw new Error("会话已切换");
+      this.inspected =
+        cmd.runId === current.agent.snapshot.runId
+          ? {
+              runId: cmd.runId,
+              tools: structuredClone(current.agent.snapshot.tools),
+            }
+          : await this.store.inspect(cmd.sessionId, cmd.runId);
+      this.publish();
+      return this.snapshot();
+    }
+    if (current.agent.busy()) throw new Error("请先停止当前任务");
+    if (cmd.type === "list_sessions") {
+      this.page = cmd.page;
+      await this.refresh();
+      this.publish();
+      return this.snapshot();
+    }
     if (cmd.type === "new") {
-      // 重复新建复用空草稿；仅在首次发送后进入侧栏，避免产生大量“新任务”条目。
-      const draft = [...this.entries.values()].find(
-        (e) => e.agent.snapshot.messages.length === 0,
-      );
-      if (draft) {
-        draft.workspace =
-          workspace === undefined ? current.workspace : workspace;
-        this.selected = draft.id;
-      } else {
-        if (this.entries.size >= 20)
-          throw new Error("内存会话已达20个上限，请重启应用释放");
-        this.create(workspace === undefined ? current.workspace : workspace);
-      }
+      const draft = await this.store.draft();
+      const meta =
+        draft ??
+        this.makeMeta(
+          workspace === undefined ? current.meta.workspace : workspace,
+        );
+      meta.workspace =
+        workspace === undefined ? current.meta.workspace : workspace;
+      await this.activate(meta);
+      this.page = 0;
+      await this.refresh();
       this.publish();
       return this.snapshot();
     }
     if (cmd.type === "select") {
-      if (!this.entries.has(cmd.sessionId)) throw new Error("会话不存在");
-      this.selected = cmd.sessionId;
+      const loaded = await this.store.load(cmd.sessionId);
+      await this.activate(loaded.meta);
       this.publish();
       return this.snapshot();
     }
     if (cmd.type === "rename") {
-      const entry = this.entries.get(cmd.sessionId);
-      if (!entry || !entry.agent.snapshot.messages.length)
-        throw new Error("会话不存在");
-      entry.title = cmd.title;
-      entry.customTitle = true;
+      const meta =
+        cmd.sessionId === current.meta.id
+          ? { ...current.meta }
+          : (await this.store.load(cmd.sessionId)).meta;
+      meta.title = cmd.title;
+      meta.customTitle = true;
+      meta.updatedAt = Date.now();
+      // 修改目标任务的元数据，不改变数据库里当前选中的会话。
+      await this.store.request({ op: "rename", meta });
+      if (meta.id === current.meta.id) current.meta = meta;
+      await this.refresh();
       this.publish();
       return this.snapshot();
     }
-    // 模型stop只表示执行结束；任务完成必须由用户确认，后续追问会重新打开任务。
     if (cmd.type === "complete_task") {
       if (
-        cmd.sessionId !== current.id ||
+        cmd.sessionId !== current.meta.id ||
         current.agent.snapshot.state !== "completed"
       )
         throw new Error("仅能确认已结束的当前任务");
-      current.taskStatus = "completed";
+      const meta = {
+        ...current.meta,
+        taskStatus: "completed" as const,
+        updatedAt: Date.now(),
+      };
+      await this.store.request({ op: "meta", meta });
+      current.meta = meta;
+      await this.refresh();
+      this.publish();
+      return this.snapshot();
+    }
+    if (cmd.type === "clear") {
+      await this.store.request({ op: "clear", sessionId: current.meta.id });
+      current.meta.taskStatus = "open";
+      await current.agent.command(cmd);
+      current.runs = [];
+      this.inspected = null;
+      current.meta.taskStatus = "open";
+      await this.store.request({ op: "meta", meta: current.meta });
+      await this.refresh();
       this.publish();
       return this.snapshot();
     }
     if (cmd.type === "send") {
-      if (cmd.sessionId !== current.id)
-        throw new Error("会话已切换，拒绝发送到错误会话");
-      if (!context || context.root !== (current.workspace?.path ?? null))
-        throw new Error("工作区授权不一致，请重新选择项目");
-      current.taskStatus = "open";
-      if (!current.customTitle && !current.agent.snapshot.messages.length)
-        current.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
+      if (
+        cmd.sessionId !== current.meta.id ||
+        !context ||
+        context.root !== (current.meta.workspace?.path ?? null)
+      )
+        throw new Error("会话或工作区授权不一致");
+      if (context.root) {
+        if ((await realpath(context.root)) !== context.root)
+          throw new Error("项目目录身份已变化，请重新选择工作区");
+        await access(context.root, constants.R_OK);
+      }
+      current.meta.taskStatus = "open";
+      current.meta.updatedAt = Date.now();
+      if (!current.meta.customTitle && !current.agent.snapshot.messages.length)
+        current.meta.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
+      await current.agent.command(cmd, context);
+      this.page = 0;
+      await this.refresh();
+      this.publish();
+      return this.snapshot();
     }
-    current.agent.command(cmd, context);
-    this.publish();
-    return this.snapshot();
+    throw new Error("不支持的会话命令");
+  }
+  async close() {
+    if (this.entry) {
+      await this.entry.agent.command({ type: "cancel" });
+      await this.entry.agent.waitForIdle();
+    }
+    await this.store.close();
   }
 }

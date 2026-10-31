@@ -6,7 +6,7 @@ import {
   type SandboxRuntimeConfig,
 } from "@anthropic-ai/sandbox-runtime";
 import { z } from "zod";
-import { workspacePath } from "./workspace-path";
+import { workspacePath, protectedRuntimePaths } from "./workspace-path";
 
 /** 命令字符串只交给沙箱内的非登录 bash；模型不能指定环境、提权或关闭沙箱。 */
 export const ExecInput = z
@@ -68,6 +68,7 @@ function policy(root?: string): SandboxRuntimeConfig {
     filesystem: {
       denyRead: [
         literal("/"),
+        ...protectedRuntimePaths().map(literal),
         ...(root
           ? [
               ".env",

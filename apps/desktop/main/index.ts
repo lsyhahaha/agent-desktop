@@ -8,7 +8,15 @@ import {
 } from "electron";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, basename } from "node:path";
-import { channels, DesktopStatus, WorkspaceSelection } from "@protocol";
+import {
+  channels,
+  DesktopStatus,
+  WorkspaceSelection,
+  BUILD_ID,
+  PROTOCOL_VERSION,
+  ClientDiagnostic,
+  DIAGNOSTIC_PREFIX,
+} from "@protocol";
 import { Settings } from "./settings";
 import { realpath } from "node:fs/promises";
 import { ChatCommand, ChatSnapshot, SaveSettings } from "@protocol";
@@ -72,6 +80,27 @@ function createWindow(): void {
       webviewTag: false,
     },
   });
+  // 只转发受约束诊断字段。普通console错误仅记录级别/行号，绝不搬运任意网页或模型文本。
+  window.webContents.on("console-message", (details) => {
+    if (details.message.startsWith(DIAGNOSTIC_PREFIX)) {
+      if (details.message.length > 4096) {
+        console.warn("[desktop] invalid_client_diagnostic");
+        return;
+      }
+      try {
+        const diagnostic = ClientDiagnostic.parse(
+          JSON.parse(details.message.slice(DIAGNOSTIC_PREFIX.length)),
+        );
+        console.error("[desktop] client_diagnostic", diagnostic);
+      } catch {
+        console.warn("[desktop] invalid_client_diagnostic");
+      }
+    } else if (details.level === "error") {
+      console.error("[desktop] renderer_console_error", {
+        line: details.lineNumber,
+      });
+    }
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.on("render-process-gone", (_event, detail) =>
@@ -90,9 +119,21 @@ function createWindow(): void {
     },
   );
 }
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on("second-instance", () => {
+if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
+  console.error(
+    "[desktop] startup_blocked: Agent Desktop 已有实例运行，本次没有启动新后台。请先在旧应用中按 ⌘Q 完整退出，再执行 npm start；关闭窗口或刷新页面不等于退出。",
+  );
+  app.exit(1);
+} else {
+  app.on("second-instance", (_event, _argv, _cwd, additionalData) => {
+    console.warn("[desktop] existing_instance_reused", {
+      buildMismatch:
+        (additionalData &&
+        typeof additionalData === "object" &&
+        "buildId" in additionalData
+          ? additionalData.buildId
+          : null) !== BUILD_ID,
+    });
     if (window?.isMinimized()) window.restore();
     window?.focus();
   });
@@ -104,7 +145,9 @@ else {
       );
       session.defaultSession.setPermissionCheckHandler(() => false);
       await settings.load();
-      runtime.start();
+      runtime.start(
+        join(app.getPath("userData"), "storage", "sessions.sqlite"),
+      );
       ipcMain.handle(channels.settingsGet, (event) => {
         assertSender(event);
         return settings.view();
@@ -137,6 +180,8 @@ else {
       ipcMain.handle(channels.status, async (event) => {
         assertSender(event);
         return DesktopStatus.parse({
+          protocolVersion: PROTOCOL_VERSION,
+          buildId: BUILD_ID,
           appVersion: app.getVersion(),
           electronVersion: process.versions.electron,
           runtime: await runtime.status(),
@@ -175,5 +220,12 @@ else {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", () => runtime.stop());
+  let quitting = false;
+  app.on("before-quit", (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    quitting = true;
+    // 原生退出先等待Runtime取消与刷盘；超时由RuntimeHost处理，避免无限阻塞退出。
+    void runtime.stop().finally(() => app.quit());
+  });
 }

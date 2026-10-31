@@ -1,0 +1,43 @@
+{
+  "root": "/private/tmp/agent-persistence-electron-NGAb40",
+  "model": "controlled SSE fixture; no real API calls or user credentials",
+  "versions": {
+    "node": "24.22.1",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "150",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026e",
+    "undici": "7.30.1",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.6.75.19-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "45.1.0",
+    "chrome": "156.0.8078.49"
+  },
+  "checks": [
+    "实际Main/preload/utilityProcess/Worker链路保存配置、会话、文件审批及工具结果",
+    "正常退出刷盘，冷启动恢复原任务与工具结果；没有自动模型请求或工具重跑",
+    "冷启动后真实桥接继续追问，保留成功模型上下文及文件工具原始结果",
+    "实际React页面渲染本地保存提示和按轮历史工具入口"
+  ]
+}

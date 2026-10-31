@@ -9,6 +9,7 @@ const runLabels = {
   completed: "本轮执行完成",
   cancelled: "已停止",
   failed: "运行失败",
+  interrupted: "上次运行已中断",
 };
 const toolLabels = {
   waiting: "等待授权",
@@ -17,6 +18,8 @@ const toolLabels = {
   denied: "已拒绝",
   error: "执行失败",
   cancelled: "已取消",
+  interrupted: "已中断",
+  unknown: "结果未确认",
 };
 
 /** 两个页面共用已有会话连接；切换模型设置不会销毁正在运行的 Agent。 */

@@ -1,0 +1,9 @@
+{
+  "root": "/private/tmp/agent-persist-boundary-uY0ZFm",
+  "checks": [
+    "宽工作区下read_file仍拒绝应用数据目录",
+    "实际OS命令沙箱拒绝读取应用数据目录",
+    "用户取消停止真实命令，终态与已知输出保存",
+    "SQLite写锁期间取消保持响应，解锁后不再请求模型"
+  ]
+}

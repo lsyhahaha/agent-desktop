@@ -1,0 +1,20 @@
+{
+  "checks": [
+    "同构建坏快照：可读错误、状态不假装就绪、诊断转发到Main终端、无原始数据泄露、新操作阻止、取消仍送达",
+    "同构建握手正常；重复启动退出码1且终端明确提示旧实例，不静默当作重启成功",
+    "健康查询重复调用的uptime递增，不缓存过期ready"
+  ],
+  "originalRepro": {
+    "before": {
+      "rawValidationShown": true,
+      "diagnosticRecorded": false,
+      "exitCode": 1
+    },
+    "after": {
+      "rawValidationShown": false,
+      "diagnosticRecorded": true,
+      "exitCode": 0
+    }
+  },
+  "coldStartRegression": "Real production Main/preload/Runtime + controlled model; rebuild between restarts preserved persisted session and successful context"
+}

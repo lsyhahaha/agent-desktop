@@ -1,4 +1,56 @@
 import { z } from "zod";
+// 构建时对Main/preload/Runtime注入同一标识；数据库格式版本独立维护，不跟随构建改变。
+declare const __APP_BUILD_ID__: string;
+export const BUILD_ID =
+  typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
+export const PROTOCOL_VERSION = 2;
+const buildIdentity = {
+  protocolVersion: z.literal(PROTOCOL_VERSION),
+  buildId: z.literal(BUILD_ID),
+};
+export const DIAGNOSTIC_PREFIX = "[agent-desktop:diagnostic]";
+export const ClientDiagnostic = z
+  .object({
+    code: z.enum(["protocol_mismatch", "invalid_request", "ipc_failed"]),
+    operation: z.enum([
+      "status",
+      "chat",
+      "chat_event",
+      "settings_get",
+      "settings_save",
+      "workspace",
+    ]),
+    fields: z
+      .array(
+        z
+          .string()
+          .max(100)
+          .regex(/^[a-zA-Z_$.*]+$/),
+      )
+      .max(12),
+  })
+  .strict();
+/** 只记录schema字段名，不记录message、received值、原始快照、文件内容或凭据。 */
+export function validationFields(error: { issues: { path: PropertyKey[] }[] }) {
+  return [
+    ...new Set(
+      error.issues.map(
+        (issue) =>
+          issue.path
+            .map((part) =>
+              typeof part === "number"
+                ? "*"
+                : typeof part === "string" && /^[a-zA-Z_]+$/.test(part)
+                  ? part
+                  : "field",
+            )
+            .join(".") || "$",
+      ),
+    ),
+  ]
+    .slice(0, 12)
+    .map((field) => field.slice(0, 100));
+}
 export const channels = {
   status: "desktop:status",
   workspace: "desktop:select-workspace",
@@ -9,6 +61,7 @@ export const channels = {
 } as const;
 export const RuntimeStatus = z
   .object({
+    ...buildIdentity,
     state: z.literal("ready"),
     pid: z.number().int().positive(),
     nodeVersion: z.string(),
@@ -17,6 +70,7 @@ export const RuntimeStatus = z
   .strict();
 export const DesktopStatus = z
   .object({
+    ...buildIdentity,
     appVersion: z.string(),
     electronVersion: z.string(),
     runtime: RuntimeStatus,
@@ -34,7 +88,10 @@ export interface DesktopBridge {
   getSettings(): Promise<ModelSettings>;
   saveSettings(value: unknown): Promise<ModelSettings>;
   chat(value: ChatCommand): Promise<SessionSnapshot>;
-  onChat(callback: (snapshot: SessionSnapshot) => void): () => void;
+  onChat(
+    callback: (snapshot: SessionSnapshot) => void,
+    onError?: (message: string) => void,
+  ): () => void;
 }
 
 export const ModelSettings = z
@@ -53,6 +110,19 @@ export const SaveSettings = z
   })
   .strict();
 export const ChatCommand = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("list_sessions"),
+      page: z.number().int().min(0).max(100000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("inspect_run"),
+      sessionId: z.string().uuid(),
+      runId: z.string().uuid(),
+    })
+    .strict(),
   z.object({ type: z.literal("snapshot") }).strict(),
   z
     .object({
@@ -97,14 +167,16 @@ export const ChatSnapshot = z
       "completed",
       "cancelled",
       "failed",
+      "interrupted",
     ]),
     messages: z
       .array(
         z
           .object({
             id: z.string(),
+            runId: z.string().uuid(),
             role: z.enum(["user", "assistant"]),
-            text: z.string(),
+            text: z.string().max(65536),
             state: z.enum(["streaming", "complete", "interrupted"]),
           })
           .strict(),
@@ -115,8 +187,8 @@ export const ChatSnapshot = z
         z
           .object({
             id: z.string(),
-            name: z.string(),
-            path: z.string(),
+            name: z.string().max(100),
+            path: z.string().max(9000),
             state: z.enum([
               "waiting",
               "running",
@@ -124,8 +196,10 @@ export const ChatSnapshot = z
               "denied",
               "error",
               "cancelled",
+              "interrupted",
+              "unknown",
             ]),
-            detail: z.string(),
+            detail: z.string().max(1000),
             // 命令输出保持有界，按快照增量频率投影；不暴露进程句柄或任意IPC。
             execution: z
               .object({
@@ -137,6 +211,7 @@ export const ChatSnapshot = z
                   "timed_out",
                   "output_limit",
                   "spawn_failed",
+                  "unknown",
                 ]),
                 exit_code: z.number().int().nullable(),
                 signal: z.string().nullable(),
@@ -172,6 +247,19 @@ export const ChatSnapshot = z
   .strict();
 export type ChatSnapshot = z.infer<typeof ChatSnapshot>;
 
+/** 历史列表只携带摘要；按轮加载工具详情，避免流式期间反复发送全部历史输出。 */
+export const RunSummary = z
+  .object({
+    id: z.string().uuid(),
+    state: ChatSnapshot.shape.state,
+    toolCount: z.number().int().min(0).max(12),
+    createdAt: z.number(),
+  })
+  .strict();
+export const RunInspection = z
+  .object({ runId: z.string().uuid(), tools: ChatSnapshot.shape.tools })
+  .strict();
+
 /** 会话索引由 Runtime 拥有；窗口只接收当前会话投影，不接触其他会话的模型上下文。 */
 export const SessionSnapshot = z
   .object({
@@ -179,6 +267,12 @@ export const SessionSnapshot = z
     sessionId: z.string().uuid(),
     taskStatus: z.enum(["open", "completed"]),
     workspace: WorkspaceSelection,
+    title: z.string().min(1).max(60),
+    sessionPage: z.number().int().nonnegative(),
+    hasMoreSessions: z.boolean(),
+    storageError: z.string().nullable(),
+    runs: z.array(RunSummary).max(50),
+    inspectedRun: RunInspection.nullable(),
     chat: ChatSnapshot,
     sessions: z
       .array(

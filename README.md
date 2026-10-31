@@ -73,3 +73,7 @@ Electron 自带的 Node.js 用于应用运行；开发机 Node.js 仅用于构�
 ## 只读命令执行验收
 
 重启加载新工具后，选择项目并输入“看看当前git历史”，确认命令后可查看输出。重启会丢失内存会话。实现、权限边界和受控Electron验收见[命令执行记录](docs/exec-command-verification.md)。
+
+## 本地持久化与协议诊断
+
+Runtime新增SQLite Worker保存会话、消息和工具审计，启动恢复历史但不重放工具；会话索引分页与历史详情接口已提供。Main/preload/Runtime使用构建标识校验，拒绝版本混用。界面整理和分页入口在后续UI提交接入；完整验收范围见docs/persistence-verification.md与docs/protocol-diagnostics-verification.md。

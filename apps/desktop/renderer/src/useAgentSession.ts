@@ -14,15 +14,25 @@ export function useAgentSession() {
   const workspace = state?.workspace ?? null;
   const sessions = state?.sessions ?? [];
   const [error, setError] = useState("");
+  const [connectionError, setConnectionError] = useState<
+    "protocol_mismatch" | "connection_failed" | null
+  >(null);
   const [pending, setPending] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const active = !!chat && ["running", "waiting_user"].includes(chat.state);
-  const fail = useCallback(
-    (e: unknown) =>
-      setError(e instanceof Error ? e.message : "操作失败，请重试"),
-    [],
-  );
+  const fail = useCallback((e: unknown) => {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message.includes("[protocol_mismatch]")) {
+      setStatus(null);
+      setConnectionError("protocol_mismatch");
+      setSettingsReady(false);
+    } else if (message.includes("[connection_failed]")) {
+      setStatus(null);
+      setConnectionError("connection_failed");
+    }
+    setError(message);
+  }, []);
   // 命令回包与异步事件可能交错，旧 revision 不得覆盖已经显示的新状态。
   const apply = useCallback(
     (next: SessionSnapshot) =>
@@ -40,12 +50,15 @@ export function useAgentSession() {
       if (!disposed) fail(e);
     };
     // 先监听再读快照，避免初始化期间遗漏状态；卸载只释放本窗口监听。
-    const stop = window.desktop.onChat(receive);
+    const stop = window.desktop.onChat(receive, report);
     void window.desktop.chat({ type: "snapshot" }).then(receive).catch(report);
     void window.desktop
       .getStatus()
       .then((value) => {
-        if (!disposed) setStatus(value);
+        if (!disposed) {
+          setStatus(value);
+          setConnectionError(null);
+        }
       })
       .catch(report);
     void window.desktop
@@ -71,7 +84,9 @@ export function useAgentSession() {
       active ||
       choosing ||
       !settingsReady ||
-      !settings.hasKey
+      !settings.hasKey ||
+      !!state?.storageError ||
+      !!connectionError
     )
       return false;
     setPending(true);
@@ -95,8 +110,16 @@ export function useAgentSession() {
   async function command(
     value: Parameters<typeof window.desktop.chat>[0],
   ): Promise<boolean> {
-    const switching = ["new", "select", "rename", "clear"].includes(value.type);
-    if (switching && (pending || active || choosing)) return false;
+    const switching = [
+      "new",
+      "select",
+      "rename",
+      "clear",
+      "inspect_run",
+      "list_sessions",
+    ].includes(value.type);
+    if (switching && (pending || active || choosing || !!connectionError))
+      return false;
     if (switching) setPending(true);
     setError("");
     try {
@@ -110,7 +133,7 @@ export function useAgentSession() {
     }
   }
   async function choose() {
-    if (active || pending || choosing) return;
+    if (active || pending || choosing || !!connectionError) return;
     setChoosing(true);
     setError("");
     try {
@@ -141,6 +164,13 @@ export function useAgentSession() {
   }
   return {
     status,
+    connectionError,
+    title: state?.title ?? "新任务",
+    sessionPage: state?.sessionPage ?? 0,
+    hasMoreSessions: state?.hasMoreSessions ?? false,
+    runs: state?.runs ?? [],
+    inspectedRun: state?.inspectedRun ?? null,
+    storageError: state?.storageError ?? null,
     sessionId: state?.sessionId ?? null,
     sessions,
     taskStatus: state?.taskStatus ?? "open",

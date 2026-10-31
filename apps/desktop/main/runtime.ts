@@ -2,6 +2,7 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
 import {
   RuntimeResponse,
+  validationFields,
   RuntimeEvent,
   RuntimeStatus,
   SessionSnapshot,
@@ -19,18 +20,24 @@ export class RuntimeHost {
     private readonly entry: string,
     private readonly onSnapshot: (value: SessionSnapshot) => void,
   ) {}
-  start(): void {
+  start(databasePath: string): void {
     if (this.child) return;
-    const child = utilityProcess.fork(this.entry, [], {
-      serviceName: "Agent Desktop Runtime",
-      env: {
-        // SDK内部用which查找shell；固定系统PATH，不继承用户目录或凭据。
-        PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
-        NODE_ENV:
-          process.env.NODE_ENV === "development" ? "development" : "production",
+    const child = utilityProcess.fork(
+      this.entry,
+      [`--database=${databasePath}`],
+      {
+        serviceName: "Agent Desktop Runtime",
+        env: {
+          // SDK内部用which查找shell；固定系统PATH，不继承用户目录或凭据。
+          PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+          NODE_ENV:
+            process.env.NODE_ENV === "development"
+              ? "development"
+              : "production",
+        },
+        stdio: "pipe",
       },
-      stdio: "pipe",
-    });
+    );
     this.child = child;
     child.stdout?.on("data", (chunk: Buffer) =>
       console.info("[runtime]", chunk.toString().trim()),
@@ -65,7 +72,19 @@ export class RuntimeHost {
     });
   }
   async status(): Promise<DesktopStatus["runtime"]> {
-    return RuntimeStatus.parse(await this.request({ type: "runtime.ping" }));
+    const result = RuntimeStatus.safeParse(
+      await this.request({ type: "runtime.ping" }),
+    );
+    if (!result.success) {
+      console.error("[runtime] protocol_mismatch", {
+        operation: "status",
+        fields: validationFields(result.error),
+      });
+      throw new Error(
+        "[protocol_mismatch] 界面与后台版本不一致，请完整退出 Agent Desktop 后重新启动。",
+      );
+    }
+    return result.data;
   }
   private request(fields: Record<string, unknown>): Promise<unknown> {
     if (!this.child)
@@ -80,7 +99,7 @@ export class RuntimeHost {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error("Runtime response timed out"));
-      }, 5000);
+      }, 10000);
       this.pending.set(id, { resolve, reject, timer });
       try {
         child.postMessage({ version: 1, id, ...fields });
@@ -100,7 +119,7 @@ export class RuntimeHost {
     context?: unknown,
     workspace?: unknown,
   ): Promise<SessionSnapshot> {
-    return SessionSnapshot.parse(
+    const result = SessionSnapshot.safeParse(
       await this.request({
         type: "agent.command",
         command,
@@ -108,26 +127,28 @@ export class RuntimeHost {
         ...(workspace !== undefined ? { workspace } : {}),
       }),
     );
+    if (!result.success) {
+      console.error("[runtime] protocol_mismatch", {
+        operation: "chat",
+        fields: validationFields(result.error),
+      });
+      throw new Error(
+        "[protocol_mismatch] 会话数据与当前版本不一致，请完整退出 Agent Desktop 后重新启动。",
+      );
+    }
+    return result.data;
   }
-  stop(): void {
+  async stop(): Promise<void> {
     const child = this.child;
-    this.child = undefined;
-    this.rejectPending(new Error("Application closing"));
-    if (child) {
-      // 先通知受信Runtime杀掉自有命令进程组；超时兜底终止Runtime，避免应用退出卡住。
-      const fallback = setTimeout(() => child.kill(), 2000);
-      fallback.unref();
-      child.once("exit", () => clearTimeout(fallback));
-      try {
-        child.postMessage({
-          version: 1,
-          id: randomUUID(),
-          type: "runtime.shutdown",
-        });
-      } catch {
-        clearTimeout(fallback);
-        child.kill();
-      }
+    if (!child) return;
+    try {
+      await this.request({ type: "runtime.shutdown" });
+    } catch {
+      console.warn("[runtime] graceful storage shutdown failed");
+    } finally {
+      this.child = undefined;
+      this.rejectPending(new Error("Application closing"));
+      child.kill();
     }
   }
   private rejectPending(error: Error): void {

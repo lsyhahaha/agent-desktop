@@ -46,7 +46,13 @@ export function ModelSettingsPage({ settings, ready, active, onSave }: Props) {
               className={
                 "connection-dot " + (settings.hasKey ? "configured" : "")
               }
-              aria-label={settings.hasKey ? "已保存凭据" : "未配置凭据"}
+              aria-label={
+                !ready
+                  ? "配置状态待确认"
+                  : settings.hasKey
+                    ? "已保存凭据"
+                    : "未配置凭据"
+              }
             />
           </div>
           <p>本次仅接入一个真实模型供应商。</p>
@@ -57,7 +63,13 @@ export function ModelSettingsPage({ settings, ready, active, onSave }: Props) {
               <span className="provider-logo large">D</span>
               <div>
                 <h2>DeepSeek API</h2>
-                <span>{settings.hasKey ? "已保存凭据" : "尚未配置"}</span>
+                <span>
+                  {!ready
+                    ? "配置状态待确认"
+                    : settings.hasKey
+                      ? "已保存凭据"
+                      : "尚未配置"}
+                </span>
               </div>
             </div>
             <span className="badge">Chat Completions</span>
@@ -106,7 +118,7 @@ export function ModelSettingsPage({ settings, ready, active, onSave }: Props) {
             <div className="credential-note">
               <span>◇</span>
               <p>
-                密钥使用系统加密后保存在本机，不会回显。对话及你批准读取的文件内容会发送至
+                密钥使用系统加密后保存在本机，不会回显。会话与工具记录保存在本机，对话及你批准读取的文件内容会发送至
                 DeepSeek。
               </p>
             </div>

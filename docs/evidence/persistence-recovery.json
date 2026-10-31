@@ -1,0 +1,21 @@
+{
+  "root": "/private/tmp/agent-recovery-e9f4o4",
+  "checks": [
+    {
+      "mode": "waiting",
+      "result": "process exited before close; recovered interrupted; no automatic execution"
+    },
+    {
+      "mode": "stream",
+      "result": "process exited before close; recovered interrupted; no automatic execution"
+    },
+    {
+      "mode": "unfinished tool checkpoint fixture",
+      "result": "unknown outcome, preserved output, no recovered process handle"
+    },
+    {
+      "mode": "terminal transaction failure",
+      "result": "final run/message/context transaction rolled back together; previous committed context retained"
+    }
+  ]
+}

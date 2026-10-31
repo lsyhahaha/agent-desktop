@@ -1,6 +1,20 @@
 import { lstat, realpath } from "node:fs/promises";
 import { resolve, relative, isAbsolute, sep } from "node:path";
 
+// 仅Runtime启动代码登记应用数据目录；模型和renderer没有放宽此列表的接口。
+const protectedRoots = new Set<string>();
+export function protectRuntimeDirectory(path: string) {
+  protectedRoots.add(resolve(path));
+}
+export function protectedRuntimePaths(): string[] {
+  return [...protectedRoots];
+}
+function isProtected(path: string) {
+  return [...protectedRoots].some(
+    (root) => path === root || path.startsWith(root + sep),
+  );
+}
+
 /** 两个只读工具共用路径策略。rootOnly 只用于目录工具的“.”，不能用于读取文件。 */
 export function validatePath(path: string, rootOnly = false): string[] {
   if (rootOnly && path === ".") return [];
@@ -51,6 +65,8 @@ export async function workspacePath(
     }
     const real = await realpath(target),
       rel = relative(canonical, real);
+    if (isProtected(real))
+      throw new Error("禁止工具访问应用自己的会话数据目录");
     if (
       (!rootOnly && !rel) ||
       rel === ".." ||
