@@ -37,7 +37,10 @@ export class AgentControl<T> {
       child.unlinkParent = () => parentSignal.removeEventListener("abort", abort);
     }
     this.children.set(id, child);
-    child.done = Promise.resolve().then(() => run(controller.signal)).then(
+    child.done = Promise.resolve().then(() => {
+      if (controller.signal.aborted) throw controller.signal.reason ?? new Error("subagent cancelled");
+      return run(controller.signal);
+    }).then(
       result => {
         snapshot.state = controller.signal.aborted ? "cancelled" : "completed";
         snapshot.finishedAt = Date.now();
