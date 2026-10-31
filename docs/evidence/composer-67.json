@@ -1,0 +1,53 @@
+{
+  "scope": "临时userData，通过既有chat:event注入受控消息投影，无模型请求或数据库写入消息",
+  "checks": [
+    {
+      "width": 1320,
+      "height": 860,
+      "theme": "dark",
+      "textHeight28": true,
+      "buttonHit28": true,
+      "buttonVisual24": true,
+      "buttonInside": true,
+      "noOverlap": true,
+      "matchingInputTone": true,
+      "inputHeight67": true,
+      "userRight": true,
+      "userBubble": true,
+      "agentBare": true,
+      "boundedWidth": true,
+      "agentLeft": true,
+      "userIndented": true,
+      "noAvatars": true,
+      "bareMessages": true,
+      "noCompletionPrompt": true,
+      "usageRetained": true,
+      "noOverflow": true,
+      "roles": true
+    },
+    {
+      "width": 1000,
+      "height": 680,
+      "theme": "light",
+      "textHeight28": true,
+      "buttonHit28": true,
+      "buttonVisual24": true,
+      "buttonInside": true,
+      "noOverlap": true,
+      "matchingInputTone": true,
+      "inputHeight67": true,
+      "userRight": true,
+      "userBubble": true,
+      "agentBare": true,
+      "boundedWidth": true,
+      "agentLeft": true,
+      "userIndented": true,
+      "noAvatars": true,
+      "bareMessages": true,
+      "noCompletionPrompt": true,
+      "usageRetained": true,
+      "noOverflow": true,
+      "roles": true
+    }
+  ]
+}

@@ -404,8 +404,8 @@ textarea {
   background: var(--user-message, #e8edef);
   border: 1px solid var(--border, #e1e4e5);
   border-radius: 16px;
-  /* 默认总高100px：边框2 + 内边距20 + 文本区40 + 间距6 + 工具栏32。 */
-  padding: 10px 16px;
+  /* 默认总高67px：边框2 + 内边距8 + 文本区28 + 间距1 + 工具栏28。 */
+  padding: 4px 14px;
 }
 .composer textarea {
   display: block;
@@ -413,8 +413,8 @@ textarea {
   border: 0;
   resize: vertical;
   width: 100%;
-  min-height: 40px;
-  height: 40px;
+  min-height: 28px;
+  height: 28px;
   max-height: 170px;
   outline: none;
   font-size: 13px;
@@ -433,8 +433,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 6px;
-  min-height: 32px;
+  margin-top: 1px;
+  min-height: 28px;
 }
 .composer-spacer {
   flex: 1;
@@ -442,14 +442,14 @@ textarea {
 .send-actions {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
 }
 .model-select {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  padding: 6px;
+  padding: 4px;
   border-radius: 5px;
   max-width: 180px;
   overflow: hidden;
@@ -459,25 +459,30 @@ textarea {
   color: var(--text-muted, #a0a8ac);
 }
 .send-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--action, #252a2c);
+  /* 视觉底色24px，仍保留28px键盘/鼠标命中区。 */
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  background-clip: content-box;
+  border-radius: 7px;
+  background-color: var(--action, #252a2c);
   color: var(--on-action, white);
-  font-size: 23px;
+  font-size: 18px;
   line-height: 1;
 }
 .send-button:not(:disabled):hover {
-  background: var(--action, #454e52);
+  background-color: var(--action, #454e52);
 }
 .send-button:disabled {
-  background: var(--disabled, #92989b);
+  background-color: var(--disabled, #92989b);
   color: var(--on-action, white);
   opacity: 0.65;
 }
 .send-button.stop {
-  font-size: 12px;
-  background: var(--action, #3d4548);
+  font-size: 10px;
+  background-color: var(--action, #3d4548);
 }
 .composer-footnote {
   font-size: 10px;
