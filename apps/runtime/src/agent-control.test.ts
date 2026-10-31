@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentControl } from "./agent-control";
+import { AgentControl } from "./agent-control.ts";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
