@@ -76,6 +76,7 @@ export class Sessions {
           state: run.state,
           toolCount: run.tools.length,
           createdAt: run.createdAt,
+          timelineVersion: run.timelineVersion,
         };
         const index = entry.runs.findIndex((r) => r.id === run.runId);
         if (index < 0) entry.runs.push(summary);
@@ -93,7 +94,7 @@ export class Sessions {
   private updateSummary(entry: Entry) {
     const summary = this.summaries.find((s) => s.id === entry.meta.id);
     if (summary) {
-      summary.state = entry.agent.snapshot.state;
+      summary.state = entry.agent.view().state;
       summary.taskStatus = entry.meta.taskStatus;
     }
   }
@@ -116,7 +117,7 @@ export class Sessions {
       storageError: this.storageError,
       runs: entry.runs,
       inspectedRun: this.inspected,
-      chat: entry.agent.snapshot,
+      chat: entry.agent.view(),
       sessions: this.summaries,
     };
   }
@@ -133,7 +134,8 @@ export class Sessions {
     const cmd = ChatCommand.parse(raw),
       current = this.current();
     if (cmd.type === "snapshot") return this.snapshot();
-    if (cmd.type === "cancel" || cmd.type === "approve") {
+    if (cmd.type === "cancel" || cmd.type === "approve" || cmd.type === "answer") {
+      if (cmd.sessionId !== current.meta.id) throw new Error("会话已切换");
       await current.agent.command(cmd);
       return this.snapshot();
     }
@@ -144,7 +146,9 @@ export class Sessions {
         cmd.runId === current.agent.snapshot.runId
           ? {
               runId: cmd.runId,
-              tools: structuredClone(current.agent.snapshot.tools),
+              tools: structuredClone(current.agent.view().tools),
+              items: structuredClone(current.agent.view().items),
+              timelineVersion: current.agent.view().timelineVersion,
             }
           : await this.store.inspect(cmd.sessionId, cmd.runId);
       this.publish();
@@ -248,7 +252,7 @@ export class Sessions {
   }
   async close() {
     if (this.entry) {
-      await this.entry.agent.command({ type: "cancel" });
+      this.entry.agent.cancel();
       await this.entry.agent.waitForIdle();
     }
     await this.store.close();

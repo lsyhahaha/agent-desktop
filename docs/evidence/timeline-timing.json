@@ -1,0 +1,8 @@
+{
+  "kind": "controlled accelerated timers; product remains 120s active / 10min interaction",
+  "checks": [
+    "等待超过缩短的主动执行预算仍可回答并完成",
+    "独立交互超时明确失败并清除交互",
+    "主动执行预算耗尽中止流式模型请求，保留文本与失败原因"
+  ]
+}

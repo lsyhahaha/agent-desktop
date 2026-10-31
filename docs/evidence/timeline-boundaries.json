@@ -1,0 +1,11 @@
+{
+  "kind": "controlled integration using temporary database copies and temporary workspace",
+  "results": [
+    "真实v1数据库迁移到v2；旧轮次显示细节不完整，不伪造事件",
+    "持久化写入意图恢复：候选摘要一致→applied、原摘要一致→not_applied、不一致→unknown；未重执行修改",
+    "无工作区可用真实提问工具，答案保留并继续同轮",
+    "乱序旧快照与同revision重复快照不会回退UI或重复追加节点",
+    "终态事务被实际写锁延迟期间不提前公开完成，迟到取消不改写结算结果",
+    "真实SQLite写锁导致输入保存失败：停止接纳、未调用模型、显式保存异常"
+  ]
+}

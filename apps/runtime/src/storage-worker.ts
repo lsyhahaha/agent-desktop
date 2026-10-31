@@ -10,7 +10,9 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { ChatSnapshot } from "@protocol";
+import { ChatSnapshot, Timeline, type TimelineItem } from "@protocol";
+import { readVersion } from "./edit-file";
+import { protectRuntimeDirectory } from "./workspace-path";
 import {
   StorageRequest,
   SessionMeta,
@@ -36,7 +38,7 @@ const db = new DatabaseSync(path);
 db.exec(
   "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
 );
-const version = db.prepare("PRAGMA user_version").get()?.user_version;
+let version = db.prepare("PRAGMA user_version").get()?.user_version;
 function transaction<T>(fn: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -64,7 +66,18 @@ if (version === 0)
   PRAGMA user_version=1;
 `),
   );
-else if (version !== 1) throw new Error("Unsupported database schema version");
+else if (version !== 1 && version !== 2)
+  throw new Error("Unsupported database schema version");
+// v1旧轮次保留空版本，不从工具摘要伪造完整执行历史。
+if (version === 0 || version === 1)
+  transaction(() =>
+    db.exec(`
+  ALTER TABLE runs ADD COLUMN timeline_version INTEGER;
+  CREATE TABLE timeline_items(run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, item_id TEXT NOT NULL, position INTEGER NOT NULL, data_json TEXT NOT NULL, PRIMARY KEY(run_id,item_id), UNIQUE(run_id,position)) STRICT;
+  PRAGMA user_version=2;
+`),
+  );
+protectRuntimeDirectory(dirname(path));
 
 const json = (value: unknown) => JSON.stringify(value);
 function parse(value: unknown): unknown {
@@ -107,15 +120,32 @@ function auditRows(runId: string) {
     .all(runId)
     .map((row) => ToolAudit.parse(parse(row.audit_json)));
 }
+function itemRows(runId: string) {
+  return Timeline.parse(
+    db
+      .prepare(
+        "SELECT data_json FROM timeline_items WHERE run_id=? ORDER BY position LIMIT 129",
+      )
+      .all(runId)
+      .map((row) => parse(row.data_json)),
+  );
+}
 function saveRun(meta: SessionMeta, run: RunCheckpoint) {
   transaction(() => {
     const previous = db
-      .prepare("SELECT session_id,revision FROM runs WHERE id=?")
+      .prepare("SELECT session_id,revision,state FROM runs WHERE id=?")
       .get(run.runId);
     if (previous && previous.session_id !== meta.id)
       throw new Error("Run ownership mismatch");
     if (previous && Number(previous.revision) > run.revision)
       throw new Error("Stale checkpoint");
+    if (
+      previous &&
+      ["completed", "failed", "cancelled", "interrupted"].includes(
+        String(previous.state),
+      )
+    )
+      throw new Error("Terminal run is immutable");
     if (run.context && run.state !== "completed")
       throw new Error("Uncommitted model context");
     saveMeta(meta);
@@ -131,6 +161,16 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
       json(run.usage),
       json(run.error),
     );
+    db.prepare("UPDATE runs SET timeline_version=? WHERE id=?").run(
+      run.timelineVersion,
+      run.runId,
+    );
+    for (const item of run.items) {
+      if (item.runId !== run.runId) throw new Error("Item ownership mismatch");
+      db.prepare(
+        "INSERT INTO timeline_items VALUES (?,?,?,?) ON CONFLICT(run_id,item_id) DO UPDATE SET data_json=excluded.data_json",
+      ).run(run.runId, item.id, item.seq, json(item));
+    }
     run.messages.forEach((message, index) => {
       if (message.runId !== run.runId)
         throw new Error("Message ownership mismatch");
@@ -152,11 +192,59 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
   });
 }
 /** 冷启动只修复未决状态，保留已知结果；不创建审批Promise、计时器、进程或工具重放。 */
-function recover() {
+async function recover() {
+  const rows = db
+    .prepare(
+      "SELECT r.id,s.workspace_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.state IN ('queued','running','waiting_user','waiting_input','waiting_approval')",
+    )
+    .all();
+  // 只核对已记录的写入，不重跑修改；核对失败保持unknown。
+  const recovered = new Map<string, TimelineItem[]>();
+  for (const row of rows) {
+    const items = itemRows(String(row.id));
+    for (const item of items) {
+      if (item.type === "file_change" && item.data.outcome === "applying") {
+        item.data.outcome = "unknown";
+        item.status = "unknown";
+        try {
+          const workspace = SessionMeta.shape.workspace.parse(
+            parse(row.workspace_json),
+          );
+          if (workspace) {
+            const current = await readVersion(
+              workspace.path,
+              item.data.path,
+              AbortSignal.timeout(5000),
+            );
+            if (current.hash === item.data.targetHash) {
+              item.data.outcome = "applied";
+              item.status = "completed";
+            } else if (current.hash === item.data.baseHash) {
+              item.data.outcome = "not_applied";
+              item.status = "interrupted";
+            }
+          }
+        } catch {
+          /* 无法核对不代表未发生写入。 */
+        }
+      } else if (["pending", "running"].includes(item.status)) {
+        item.status =
+          item.type === "tool" && item.data.executionId
+            ? "unknown"
+            : "interrupted";
+        if (item.type === "interaction") item.data.decision = "expired";
+      }
+      if (
+        ["unknown", "interrupted"].includes(item.status) ||
+        item.endedAt === null
+      ) {
+        item.phase = "completed";
+        item.updatedAt = Date.now(); /* 真实结束时间未知，不补造endedAt。 */
+      }
+    }
+    recovered.set(String(row.id), items);
+  }
   transaction(() => {
-    const rows = db
-      .prepare("SELECT id FROM runs WHERE state IN ('running','waiting_user')")
-      .all();
     for (const row of rows) {
       const id = String(row.id);
       db.prepare(
@@ -168,6 +256,10 @@ function recover() {
         }),
         id,
       );
+      for (const item of recovered.get(id) ?? [])
+        db.prepare(
+          "UPDATE timeline_items SET data_json=? WHERE run_id=? AND item_id=?",
+        ).run(json(item), id, item.id);
       for (const message of db
         .prepare("SELECT id,data_json FROM messages WHERE run_id=?")
         .all(id)) {
@@ -233,6 +325,9 @@ function load(id: string) {
       runId: last?.id ?? null,
       state: last?.state ?? "idle",
       messages,
+      items: last ? itemRows(String(last.id)) : [],
+      timelineVersion: last?.timeline_version ?? null,
+      stopping: false,
       tools: last ? auditRows(String(last.id)).map((t) => t.view) : [],
       interaction: null,
       usage: last
@@ -244,6 +339,7 @@ function load(id: string) {
       id: run.id,
       state: run.state,
       createdAt: run.created_at,
+      timelineVersion: run.timeline_version ?? null,
       toolCount: Number(
         db
           .prepare("SELECT COUNT(*) AS n FROM tool_calls WHERE run_id=?")
@@ -252,7 +348,7 @@ function load(id: string) {
     })),
   });
 }
-parentPort!.on("message", (raw: unknown) => {
+parentPort!.on("message", async (raw: unknown) => {
   let id: number | undefined;
   try {
     // 双重校验：限制跨Worker输入大小，数据库所有字符串通过绑定参数传入。
@@ -267,7 +363,7 @@ parentPort!.on("message", (raw: unknown) => {
     let value: unknown;
     switch (request.op) {
       case "recover":
-        value = recover();
+        value = await recover();
         break;
       case "selected":
       case "draft": {
@@ -326,11 +422,15 @@ parentPort!.on("message", (raw: unknown) => {
       }
       case "inspect": {
         const owned = db
-          .prepare("SELECT id FROM runs WHERE id=? AND session_id=?")
+          .prepare(
+            "SELECT id,timeline_version FROM runs WHERE id=? AND session_id=?",
+          )
           .get(request.runId, request.sessionId);
         if (!owned) throw new RecordNotFound("Run not owned by session");
         value = {
           runId: request.runId,
+          items: itemRows(request.runId),
+          timelineVersion: owned.timeline_version ?? null,
           tools: auditRows(request.runId).map((t) => t.view),
         };
         break;

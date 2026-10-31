@@ -3,11 +3,15 @@ import { MarkdownReply } from "./MarkdownReply";
 import { ConversationMinimap } from "./ConversationMinimap";
 import { Tooltip } from "./Tooltip";
 import { ThemePicker } from "./ThemePicker";
+import { ExecutionTimeline } from "./ExecutionTimeline";
 import { ToolRecords } from "./ToolRecords";
 import { ModelSettingsPage } from "./ModelSettingsPage";
 import { useAgentSession } from "./useAgentSession";
 
 const runLabels = {
+  queued: "任务已接纳",
+  waiting_input: "等待你的回答",
+  waiting_approval: "等待用户授权",
   idle: "准备就绪",
   running: "正在生成",
   waiting_user: "等待用户授权",
@@ -39,12 +43,13 @@ export function App() {
     setText(drafts.current.get(agent.sessionId ?? "") ?? "");
     setExpandedRun(null);
     follow.current = true;
+    setAwayFromLatest(false);
   }, [agent.sessionId]);
   function changeText(value: string) {
     setText(value);
     if (agent.sessionId) drafts.current.set(agent.sessionId, value);
   }
-  const [approvalPending, setApprovalPending] = useState(false);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const empty = !agent.chat?.messages.length;
@@ -116,16 +121,28 @@ export function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [page]);
-  /** 审批绑定当次 interactionId；即使双击或旧按钮残留，也由 Runtime 再校验。 */
-  async function approve(allow: boolean) {
-    const id = agent.chat?.interaction?.id;
-    if (!id || approvalPending) return;
-    setApprovalPending(true);
-    try {
-      await agent.command({ type: "approve", interactionId: id, allow });
-    } finally {
-      setApprovalPending(false);
-    }
+  /** 取消和回复都绑定当前轮次，旧界面不能作用于新Run。 */
+  async function stop() {
+    if (agent.sessionId && agent.chat?.runId)
+      await agent.command({
+        type: "cancel",
+        sessionId: agent.sessionId,
+        runId: agent.chat.runId,
+      });
+  }
+  async function reply(value: boolean | string) {
+    const interaction = agent.chat?.interaction;
+    if (!interaction || !agent.sessionId || !agent.chat?.runId) return false;
+    const scope = {
+      sessionId: agent.sessionId,
+      runId: agent.chat.runId,
+      interactionId: interaction.id,
+    };
+    return agent.command(
+      typeof value === "string"
+        ? { type: "answer", ...scope, answer: value }
+        : { type: "approve", ...scope, allow: value },
+    );
   }
   const currentTitle = agent.title;
   // 按 Unicode 码点截取名称，避免把 emoji 的代理对截断；完整值仍用于可访问名称。
@@ -133,7 +150,8 @@ export function App() {
   const projectLabel = agent.choosing
     ? "正在选择…"
     : agent.workspace
-      ? projectCharacters.slice(0, 20).join("") + (projectCharacters.length > 20 ? "…" : "")
+      ? projectCharacters.slice(0, 20).join("") +
+        (projectCharacters.length > 20 ? "…" : "")
       : "未选择项目";
   const sendHint = agent.connectionError
     ? "恢复连接后再发送消息"
@@ -177,7 +195,13 @@ export function App() {
           aria-hidden="true"
         >
           <circle cx="10" cy="10" r="7.5" />
-          <path d={sidebarCollapsed ? "m8.5 6.5 3.5 3.5-3.5 3.5" : "m11.5 6.5-3.5 3.5 3.5 3.5"} />
+          <path
+            d={
+              sidebarCollapsed
+                ? "m8.5 6.5 3.5 3.5-3.5 3.5"
+                : "m11.5 6.5-3.5 3.5 3.5 3.5"
+            }
+          />
         </svg>
       </button>
       {/* 原生自动弹出层负责点击外部/Escape 关闭；只列出已实现的设置。 */}
@@ -190,7 +214,13 @@ export function App() {
           title="设置"
           popoverTarget="settings-menu"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
             <path d="m9.5 3-.5 2-1.5.9-2-.5L3 9.6l1.5 1.5v1.8L3 14.4l2.5 4.2 2-.5 1.5.9.5 2h5l.5-2 1.5-.9 2 .5 2.5-4.2-1.5-1.5v-1.8L21 9.6l-2.5-4.2-2 .5L15 5l-.5-2z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
@@ -205,7 +235,9 @@ export function App() {
           onToggle={(event) => {
             // 打开后直接聚焦真实设置项，不在普通页面加载时抢占输入焦点。
             if (event.newState === "open")
-              event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
+              event.currentTarget
+                .querySelector<HTMLButtonElement>("button")
+                ?.focus();
           }}
         >
           <button
@@ -455,17 +487,20 @@ export function App() {
           </span>
           <div className="header-actions">
             {agent.active && page === "settings" && (
-              <button
-                className="stop-button"
-                onClick={() => void agent.command({ type: "cancel" })}
-              >
+              <button className="stop-button" onClick={() => void stop()}>
                 ■ 停止任务
               </button>
             )}
-            <span className={"run-status " + (agent.active ? "busy" : "")}>
+            <span
+              role="status"
+              className={"run-status " + (agent.active ? "busy" : "")}
+            >
               {agent.connectionError
                 ? "连接异常"
-                : agent.chat?.tools.some((tool) => tool.state === "running")
+                : agent.chat?.stopping
+                  ? "正在停止…"
+                  : agent.chat?.state === "running" &&
+                      agent.chat?.tools.some((tool) => tool.state === "running")
                     ? "工具执行中"
                     : runLabels[agent.chat?.state ?? "idle"]}
             </span>
@@ -492,155 +527,193 @@ export function App() {
             }
           >
             <div className="conversation-region">
-            <div
-              className="conversation-scroll"
-              ref={viewport}
-              onScroll={() => {
-                const el = viewport.current;
-                if (el)
-                  follow.current =
-                    el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-              }}
-            >
-              {empty ? (
-                <section className="welcome">
-                  <span className="watermark" aria-hidden="true">
-                    A
-                  </span>
-                  <h1>今天有什么工作，交给我吧</h1>
-                  <p>从一次对话开始，让每一步执行都清晰可见。</p>
-                </section>
-              ) : (
-                <div className="conversation-content">
-                  {agent.chat?.messages.map((message) => (
-                    <article
-                      className={"message " + message.role}
-                      key={message.id}
-                      aria-label={message.role === "user" ? "用户消息" : "Agent 回复"}
-                    >
-                      {message.state === "streaming" && (
-                        <span className="stream-label">
-                          正在回复
-                          <span className="typing-dot" />
-                        </span>
-                      )}
-                      {message.state === "interrupted" && (
-                        <span className="stream-label">本轮未完成</span>
-                      )}
-                      <div className="message-content"
-                        data-minimap-id={message.id}
-                        data-minimap-round={message.runId}
-                        data-minimap-kind={message.role}
-                        data-minimap-label={message.role === "user" ? "用户消息" : "Agent 回复"}>
-                        {message.text
-                          ? message.role === "assistant"
-                            ? <MarkdownReply text={message.text} />
-                            : message.text
-                          : message.state === "streaming"
-                            ? "正在等待模型…"
-                            : "本轮未产生文本"}
-                      </div>
-                      {message.role === "assistant" &&
-                        message.runId !== agent.chat?.runId &&
-                        (agent.runs.find((run) => run.id === message.runId)
-                          ?.toolCount ?? 0) > 0 && (
-                          <>
-                            <button
-                              className="history-toggle"
-                              disabled={agent.active || agent.pending}
-                              onClick={async () => {
-                                if (expandedRun === message.runId) {
-                                  setExpandedRun(null);
-                                  return;
-                                }
-                                if (
-                                  agent.sessionId &&
-                                  (await agent.command({
-                                    type: "inspect_run",
-                                    sessionId: agent.sessionId,
-                                    runId: message.runId,
-                                  }))
-                                )
-                                  setExpandedRun(message.runId);
-                              }}
-                            >
-                              {expandedRun === message.runId ? "收起" : "查看"}
-                              本轮工具记录（
-                              {
-                                agent.runs.find(
-                                  (run) => run.id === message.runId,
-                                )?.toolCount
-                              }
-                              ）
-                            </button>
-                            {expandedRun === message.runId &&
-                              agent.inspectedRun?.runId === message.runId && (
-                                <ToolRecords tools={agent.inspectedRun.tools} runId={message.runId} />
-                              )}
-                          </>
-                        )}
-                    </article>
-                  ))}
-                  {!!agent.chat?.tools.length && (
-                    <ToolRecords tools={agent.chat.tools} runId={agent.chat.runId ?? undefined} />
-                  )}
-                  {agent.chat?.interaction && (
-                    <section
-                      className="approval"
-                      data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="等待授权"
-                      aria-labelledby="approval-heading"
-                    >
-                      <div className="approval-icon">◇</div>
-                      <div>
-                        <h3 id="approval-heading">
-                          {agent.chat.interaction.kind === "exec_command"
-                            ? "允许执行这个命令吗？"
-                            : "允许读取这个文件吗？"}
-                        </h3>
-                        <code>{agent.chat.interaction.path}</code>
-                        <p>
-                          {agent.chat.interaction.kind === "exec_command"
-                            ? "命令在只读沙箱中运行，禁止写入、删除和网络；可读取项目文件，输出会保存在本机并发送到 DeepSeek。最多60秒、32KiB输出，停止任务会终止命令。"
-                            : "文件内容会保存在本机并发送到 DeepSeek。本次仅允许读取该文件，最多32KiB，不包含写入或命令执行权限。"}
-                        </p>
-                        <div className="approval-actions">
-                          <button
-                            onClick={() => void approve(false)}
-                            disabled={approvalPending}
+              <div
+                className="conversation-scroll"
+                ref={viewport}
+                onScroll={() => {
+                  const el = viewport.current;
+                  if (el) {
+                    follow.current =
+                      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                    setAwayFromLatest(!follow.current);
+                  }
+                }}
+              >
+                {empty ? (
+                  <section className="welcome">
+                    <span className="watermark" aria-hidden="true">
+                      A
+                    </span>
+                    <h1>今天有什么工作，交给我吧</h1>
+                    <p>从一次对话开始，让每一步执行都清晰可见。</p>
+                  </section>
+                ) : (
+                  <div className="conversation-content">
+                    {agent.chat?.messages.map((message) => {
+                      const current = message.runId === agent.chat?.runId;
+                      const inspection =
+                        agent.inspectedRun?.runId === message.runId
+                          ? agent.inspectedRun
+                          : null;
+                      const version = current
+                        ? agent.chat?.timelineVersion
+                        : agent.runs.find((run) => run.id === message.runId)
+                            ?.timelineVersion;
+                      const showTimeline =
+                        message.role === "assistant" &&
+                        (current || expandedRun === message.runId);
+                      return (
+                        <article
+                          className={"message " + message.role}
+                          key={message.id}
+                          aria-label={
+                            message.role === "user" ? "用户消息" : "Agent 执行"
+                          }
+                        >
+                          <div
+                            data-minimap-id={message.id}
+                            data-minimap-round={message.runId}
+                            data-minimap-kind={message.role}
+                            data-minimap-label={
+                              message.role === "user"
+                                ? "用户消息"
+                                : "Agent 回复"
+                            }
                           >
-                            拒绝
-                          </button>
-                          <button
-                            className="primary"
-                            onClick={() => void approve(true)}
-                            disabled={approvalPending}
-                          >
-                            {agent.chat.interaction.kind === "exec_command"
-                              ? "允许本次执行"
-                              : "允许本次读取"}
-                          </button>
-                        </div>
+                            {message.role === "user" ? (
+                              <div className="message-content">
+                                {message.text}
+                              </div>
+                            ) : (
+                              <>
+                                {!current && (
+                                  <button
+                                    className="history-toggle"
+                                    aria-expanded={
+                                      expandedRun === message.runId
+                                    }
+                                    disabled={agent.pending}
+                                    onClick={async () => {
+                                      if (expandedRun === message.runId) {
+                                        setExpandedRun(null);
+                                        return;
+                                      }
+                                      if (
+                                        agent.sessionId &&
+                                        (await agent.command({
+                                          type: "inspect_run",
+                                          sessionId: agent.sessionId,
+                                          runId: message.runId,
+                                        }))
+                                      )
+                                        setExpandedRun(message.runId);
+                                    }}
+                                  >
+                                    {expandedRun === message.runId
+                                      ? "收起"
+                                      : "查看"}{" "}
+                                    本轮执行时间线
+                                  </button>
+                                )}
+                                {showTimeline && version === 1 ? (
+                                  <ExecutionTimeline
+                                    items={
+                                      current
+                                        ? agent.chat!.items
+                                        : (inspection?.items ?? [])
+                                    }
+                                    interaction={
+                                      current && !agent.chat?.stopping
+                                        ? (agent.chat?.interaction ?? null)
+                                        : null
+                                    }
+                                    onReply={reply}
+                                  />
+                                ) : (
+                                  <div className="message-content">
+                                    <MarkdownReply
+                                      text={
+                                        message.text ||
+                                        (current && agent.active
+                                          ? "任务已接纳，等待执行事件…"
+                                          : "本轮未产生文本")
+                                      }
+                                    />
+                                  </div>
+                                )}
+                                {version !== 1 && (
+                                  <p className="muted">
+                                    旧版记录，执行细节不完整
+                                  </p>
+                                )}
+                                {showTimeline && version !== 1 && (
+                                  <ToolRecords
+                                    tools={
+                                      current
+                                        ? agent.chat!.tools
+                                        : (inspection?.tools ?? [])
+                                    }
+                                    runId={message.runId}
+                                  />
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                    {agent.chat?.state === "cancelled" && (
+                      <p
+                        className="run-note"
+                        data-minimap-round={agent.chat?.runId ?? undefined}
+                        data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
+                        data-minimap-kind="system"
+                        data-minimap-label="本轮已停止"
+                      >
+                        本轮已停止。未完成的输出不会加入后续模型上下文。
+                      </p>
+                    )}
+                    {agent.chat?.state === "completed" && (
+                      <div
+                        className="usage"
+                        data-minimap-round={agent.chat?.runId ?? undefined}
+                        data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
+                        data-minimap-kind="system"
+                        data-minimap-label="本轮用量"
+                      >
+                        本轮用量 ·{" "}
+                        {agent.chat.usage.complete
+                          ? `输入 ${agent.chat.usage.input} / 输出 ${agent.chat.usage.output} tokens`
+                          : "Provider 用量信息不完整"}
                       </div>
-                    </section>
-                  )}
-                  {agent.chat?.state === "cancelled" && (
-                    <p className="run-note" data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="本轮已停止">
-                      本轮已停止。未完成的输出不会加入后续模型上下文。
-                    </p>
-                  )}
-                  {agent.chat?.state === "completed" && (
-                    <div className="usage" data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="本轮用量">
-                      本轮用量 ·{" "}
-                      {agent.chat.usage.complete
-                        ? `输入 ${agent.chat.usage.input} / 输出 ${agent.chat.usage.output} tokens`
-                        : "Provider 用量信息不完整"}
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {awayFromLatest && (
+                <button
+                  className="jump-latest"
+                  onClick={() => {
+                    follow.current = true;
+                    setAwayFromLatest(false);
+                    if (viewport.current)
+                      viewport.current.scrollTop =
+                        viewport.current.scrollHeight;
+                  }}
+                >
+                  回到最新 ↓
+                </button>
               )}
-            </div>
-            {!empty && <ConversationMinimap key={agent.sessionId ?? "draft"} viewport={viewport}
-              onNavigate={() => { follow.current = false; }} />}
+              {!empty && (
+                <ConversationMinimap
+                  key={agent.sessionId ?? "draft"}
+                  viewport={viewport}
+                  onNavigate={() => {
+                    follow.current = false;
+                    setAwayFromLatest(true);
+                  }}
+                />
+              )}
             </div>
             <div className="compose-area">
               {(agent.error || agent.storageError || agent.chat?.error) && (
@@ -652,27 +725,60 @@ export function App() {
               )}
               <div className="composer-wrap">
                 <div className="composer-context">
-                  <Tooltip className="project-tooltip" content={
-                    "选择或切换项目目录" +
-                    (agent.workspace ? `\n${agent.workspace.path}` : "") +
-                    (agent.active ? "\n停止当前运行后可切换项目。" : "")
-                  }>
+                  <Tooltip
+                    className="project-tooltip"
+                    content={
+                      "选择或切换项目目录" +
+                      (agent.workspace ? `\n${agent.workspace.path}` : "") +
+                      (agent.active ? "\n停止当前运行后可切换项目。" : "")
+                    }
+                  >
                     <button
                       className="project-select"
-                      aria-label={agent.workspace ? `选择或切换项目目录，当前项目：${agent.workspace.name}` : "选择或切换项目目录，未选择项目"}
-                      disabled={!!agent.connectionError || agent.active || agent.pending || agent.choosing}
+                      aria-label={
+                        agent.workspace
+                          ? `选择或切换项目目录，当前项目：${agent.workspace.name}`
+                          : "选择或切换项目目录，未选择项目"
+                      }
+                      disabled={
+                        !!agent.connectionError ||
+                        agent.active ||
+                        agent.pending ||
+                        agent.choosing
+                      }
                       onClick={() => void agent.choose()}
                     >
-                      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                      >
                         <path d="M2.5 5.5h5l2 2h8v9h-15zM2.5 7.5v-3h5l2 2h8v1" />
                       </svg>
                       <span className="project-name">{projectLabel}</span>
                     </button>
                   </Tooltip>
-                  <Tooltip content="普通对话无需选择项目" align="end" className="project-info-tooltip">
-                    <button type="button" className="project-info" aria-label="项目选择说明">
-                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                        <circle cx="10" cy="10" r="7.5" /><path d="M10 9v5m0-8v.5" />
+                  <Tooltip
+                    content="普通对话无需选择项目"
+                    align="end"
+                    className="project-info-tooltip"
+                  >
+                    <button
+                      type="button"
+                      className="project-info"
+                      aria-label="项目选择说明"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <circle cx="10" cy="10" r="7.5" />
+                        <path d="M10 9v5m0-8v.5" />
                       </svg>
                     </button>
                   </Tooltip>
@@ -725,8 +831,9 @@ export function App() {
                         <Tooltip content="停止当前生成" align="end">
                           <button
                             aria-label="停止生成"
+                            disabled={agent.chat?.stopping}
                             className="send-button stop"
-                            onClick={() => void agent.command({ type: "cancel" })}
+                            onClick={() => void stop()}
                           >
                             ■
                           </button>
@@ -756,18 +863,18 @@ export function App() {
                 </div>
               </div>
               {(agent.connectionError || !agent.settings.hasKey) && (
-              <p className="composer-footnote">
-                {agent.connectionError ? (
-                  <span>恢复连接后再发送消息。</span>
-                ) : !agent.settings.hasKey ? (
-                  <button
-                    className="text-link"
-                    onClick={() => setPage("settings")}
-                  >
-                    先配置 DeepSeek API Key，开始真实对话
-                  </button>
-                ) : null}
-              </p>
+                <p className="composer-footnote">
+                  {agent.connectionError ? (
+                    <span>恢复连接后再发送消息。</span>
+                  ) : !agent.settings.hasKey ? (
+                    <button
+                      className="text-link"
+                      onClick={() => setPage("settings")}
+                    >
+                      先配置 DeepSeek API Key，开始真实对话
+                    </button>
+                  ) : null}
+                </p>
               )}
             </div>
             {empty && (

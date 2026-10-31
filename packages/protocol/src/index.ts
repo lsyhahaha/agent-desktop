@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { Timeline } from "./timeline";
+export * from "./timeline";
 // 构建时对Main/preload/Runtime注入同一标识；数据库格式版本独立维护，不跟随构建改变。
 declare const __APP_BUILD_ID__: string;
 export const BUILD_ID =
   typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 const buildIdentity = {
   protocolVersion: z.literal(PROTOCOL_VERSION),
   buildId: z.literal(BUILD_ID),
@@ -131,7 +133,22 @@ export const ChatCommand = z.discriminatedUnion("type", [
       text: z.string().trim().min(1).max(16000),
     })
     .strict(),
-  z.object({ type: z.literal("cancel") }).strict(),
+  z
+    .object({
+      type: z.literal("cancel"),
+      sessionId: z.string().uuid(),
+      runId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("answer"),
+      sessionId: z.string().uuid(),
+      runId: z.string().uuid(),
+      interactionId: z.string().uuid(),
+      answer: z.string().trim().min(1).max(4000),
+    })
+    .strict(),
   z.object({ type: z.literal("clear") }).strict(),
   z.object({ type: z.literal("new") }).strict(),
   z
@@ -150,6 +167,8 @@ export const ChatCommand = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("approve"),
+      sessionId: z.string().uuid(),
+      runId: z.string().uuid(),
       interactionId: z.string().uuid(),
       allow: z.boolean(),
     })
@@ -164,11 +183,17 @@ export const ChatSnapshot = z
       "idle",
       "running",
       "waiting_user",
+      "queued",
+      "waiting_input",
+      "waiting_approval",
       "completed",
       "cancelled",
       "failed",
       "interrupted",
     ]),
+    items: Timeline,
+    timelineVersion: z.literal(1).nullable(),
+    stopping: z.boolean(),
     messages: z
       .array(
         z
@@ -228,7 +253,9 @@ export const ChatSnapshot = z
       .object({
         id: z.string().uuid(),
         path: z.string(),
-        kind: z.enum(["read_file", "exec_command"]),
+        kind: z.enum(["read_file", "exec_command", "edit_file", "input"]),
+        itemId: z.string().uuid(),
+        options: z.array(z.string().max(300)).max(6).optional(),
       })
       .strict()
       .nullable(),
@@ -254,10 +281,16 @@ export const RunSummary = z
     state: ChatSnapshot.shape.state,
     toolCount: z.number().int().min(0).max(12),
     createdAt: z.number(),
+    timelineVersion: z.literal(1).nullable(),
   })
   .strict();
 export const RunInspection = z
-  .object({ runId: z.string().uuid(), tools: ChatSnapshot.shape.tools })
+  .object({
+    runId: z.string().uuid(),
+    tools: ChatSnapshot.shape.tools,
+    items: Timeline,
+    timelineVersion: z.literal(1).nullable(),
+  })
   .strict();
 
 /** 会话索引由 Runtime 拥有；窗口只接收当前会话投影，不接触其他会话的模型上下文。 */

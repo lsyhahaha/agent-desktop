@@ -88,7 +88,7 @@ export async function modelStep(
         stream_options: { include_usage: true },
         thinking: { type: "disabled" },
         max_tokens: 4096,
-        ...(tools ? { tools: toolDefinitions } : {}),
+        tools: tools ? toolDefinitions : toolDefinitions.filter((tool) => ["update_plan", "request_user_input"].includes(tool.function.name)),
       }),
     });
   } catch {
@@ -169,7 +169,7 @@ export async function modelStep(
         if (c.function?.arguments)
           item.function.arguments += c.function.arguments;
         if (
-          item.function.arguments.length > 4096 ||
+          item.function.arguments.length > 200000 ||
           item.id.length > 256 ||
           item.function.name.length > 100
         )

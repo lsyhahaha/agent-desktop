@@ -15,7 +15,7 @@ export const ModelMessage = z
             function: z
               .object({
                 name: z.string().max(100),
-                arguments: z.string().max(4096),
+                arguments: z.string().max(200000),
               })
               .strict(),
           })
@@ -46,7 +46,7 @@ export type SessionMeta = z.infer<typeof SessionMeta>;
 export const ToolAudit = z
   .object({
     view: ChatSnapshot.shape.tools.element,
-    arguments: z.string().max(4096),
+    arguments: z.string().max(200000),
     result: z.string().max(262144).nullable(),
     approval: z.enum([
       "pending",
@@ -66,6 +66,8 @@ export const RunCheckpoint = z
     model: z.string().max(100),
     createdAt: z.number(),
     revision: z.number().int().nonnegative(),
+    items: ChatSnapshot.shape.items,
+    timelineVersion: z.literal(1).nullable(),
     state: ChatSnapshot.shape.state,
     messages: z.array(ChatSnapshot.shape.messages.element).length(2),
     tools: z.array(ToolAudit).max(12),

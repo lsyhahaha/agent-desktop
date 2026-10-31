@@ -11,6 +11,7 @@ import { workspacePath, protectedRuntimePaths } from "./workspace-path";
 /** 命令字符串只交给沙箱内的非登录 bash；模型不能指定环境、提权或关闭沙箱。 */
 export const ExecInput = z
   .object({
+    purpose: z.enum(["command", "verification"]).default("command"),
     command: z
       .string()
       .min(1)

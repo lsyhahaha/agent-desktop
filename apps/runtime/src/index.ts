@@ -76,7 +76,7 @@ port.on("message", ({ data }: { data: unknown }) => {
   if (
     request.type === "runtime.ping" ||
     (request.type === "agent.command" &&
-      ["snapshot", "cancel", "approve"].includes(request.command.type))
+      ["snapshot", "cancel", "approve", "answer"].includes(request.command.type))
   )
     void handle();
   else queue = queue.then(handle, handle);

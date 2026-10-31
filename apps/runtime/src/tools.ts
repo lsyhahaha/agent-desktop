@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PlanSteps, Question } from "@protocol";
 import {
   ExecInput,
   PollInput,
@@ -20,6 +21,27 @@ import { readFile, ReadInput, validatePath } from "./read-file";
 import { listDirectory, DirectoryInput } from "./list-directory";
 
 /** 唯一工具注册表：模型声明和执行端查同一份定义，避免“声明存在但Runtime不接受”。 */
+export const PlanInput = z.object({ steps: PlanSteps }).strict();
+export const EditInput = z
+  .object({
+    path: z.string().min(1).max(1024),
+    base_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    content: z.string().max(32768),
+  })
+  .strict();
+export const interactiveDefinitions = [
+  ["update_plan", "创建或更新本轮计划；待办不代表已执行。", PlanInput],
+  [
+    "request_user_input",
+    "向用户提出问题并等待回答，可提供选项，用户也可自由输入。",
+    Question,
+  ],
+  [
+    "edit_file",
+    "修改本轮已批准读取的已有文本文件，base_hash使用read_file返回的版本。提交完整新内容，最多32KiB；用户审阅前后对照并批准后才应用，冲突必须重新读取。",
+    EditInput,
+  ],
+] as const;
 const registry = {
   exec_command: {
     input: ExecInput,
@@ -106,14 +128,24 @@ const registry = {
     },
   },
 };
-export const toolDefinitions = Object.entries(registry).map(([name, tool]) => ({
-  type: "function" as const,
-  function: {
-    name,
-    description: tool.description,
-    parameters: z.toJSONSchema(tool.input, { io: "input" }),
-  },
-}));
+export const toolDefinitions = [
+  ...Object.entries(registry).map(([name, tool]) => ({
+    type: "function" as const,
+    function: {
+      name,
+      description: tool.description,
+      parameters: z.toJSONSchema(tool.input, { io: "input" }),
+    },
+  })),
+  ...interactiveDefinitions.map(([name, description, input]) => ({
+    type: "function" as const,
+    function: {
+      name,
+      description,
+      parameters: z.toJSONSchema(input, { io: "input" }),
+    },
+  })),
+];
 /** 先验证工具名、参数和路径，再生成审批；工具结果只在执行后进入模型上下文。 */
 export function prepareTool(name: string, argumentsText: string) {
   if (!Object.hasOwn(registry, name)) throw new Error("不支持的工具");

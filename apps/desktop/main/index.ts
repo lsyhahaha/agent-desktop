@@ -27,9 +27,11 @@ let window: BrowserWindow | undefined;
 let active = false;
 let dispatching = false;
 let selectedRoot: string | null = null;
+let currentScope: { sessionId: string; runId: string } | null = null;
 const settings = new Settings();
 const runtime = new RuntimeHost(join(here, "runtime.js"), (snapshot) => {
-  active = ["running", "waiting_user"].includes(snapshot.chat.state);
+  currentScope = snapshot.chat.runId ? { sessionId: snapshot.sessionId, runId: snapshot.chat.runId } : null;
+  active = ["queued", "running", "waiting_user", "waiting_input", "waiting_approval"].includes(snapshot.chat.state);
   // 工作区只来自 Main 的原生目录授权或 Runtime 已保存的会话，不接受前端路径。
   selectedRoot = snapshot.workspace?.path ?? null;
   if (window && !window.isDestroyed())
@@ -128,7 +130,7 @@ function createWindow(): void {
     console.error("[desktop] renderer gone", detail.reason),
   );
   window.on("closed", () => {
-    void runtime.chat({ type: "cancel" }).catch(() => {});
+    if (currentScope && active) void runtime.chat({ type: "cancel", ...currentScope }).catch(() => {});
     window = undefined;
   });
   const url = devUrl();
@@ -183,7 +185,7 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
         const cmd = ChatCommand.parse(raw);
         if (
           dispatching &&
-          !["snapshot", "cancel", "approve"].includes(cmd.type)
+          !["snapshot", "cancel", "approve", "answer"].includes(cmd.type)
         )
           throw new Error("正在接纳任务，请稍后重试");
         if (cmd.type === "send") {

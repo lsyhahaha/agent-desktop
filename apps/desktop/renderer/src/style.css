@@ -1396,3 +1396,39 @@ textarea {
 .markdown-reply .task-list-item { list-style: none; }
 .markdown-reply input[type="checkbox"] { accent-color: var(--success-text, #38664c); margin-right: 7px; }
 .markdown-image-note { color: var(--text-muted, #78848b); }
+
+/* 执行事实按轮展示；使用现有主题变量，无额外面板或远程资源。 */
+.execution-timeline { width: 100%; min-width: 0; text-align: left; }
+.execution-timeline > ol { list-style: none; margin: 0; padding: 4px 0; }
+.timeline-item { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 12px; position: relative; padding: 7px 0 14px; }
+.timeline-item:not(:last-child)::before { content: ""; position: absolute; left: 8px; top: 28px; bottom: 0; width: 1px; background: var(--border, #dfe2e3); }
+.timeline-icon { color: var(--text-muted, #596268); margin-top: 2px; }
+.timeline-item.running > .timeline-icon { color: var(--text, #252729); animation: timeline-pulse 1.6s ease-in-out infinite; }
+.timeline-item.failed > .timeline-icon, .timeline-item.unknown > .timeline-icon { color: var(--error-text, #a13c36); }
+.timeline-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-muted, #596268); }
+.timeline-heading strong { font-size: 13px; font-weight: 500; color: var(--text, #252729); overflow-wrap: anywhere; white-space: pre-wrap; }
+.timeline-item.completed:not(.type-message):not(.type-summary) .timeline-heading strong { color: var(--text-muted, #596268); }
+.timeline-heading time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.timeline-body { min-width: 0; }
+.timeline-body p { margin: 7px 0; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.65; }
+.timeline-body small { display: block; color: var(--text-muted, #596268); overflow-wrap: anywhere; }
+.timeline-prose { margin-top: 6px; }
+.timeline-disclosure > button { padding: 5px 0; min-height: 28px; font-size: 12px; color: var(--text-muted, #596268); text-decoration: underline; text-underline-offset: 3px; }
+.timeline-detail { margin: 6px 0; min-width: 0; }
+.timeline-detail pre { max-height: 320px; overflow: auto; padding: 12px; margin: 5px 0; background: var(--surface-muted, #eceff0); border-radius: 6px; font-size: 12px; white-space: pre; line-height: 1.6; }
+.timeline-plan { margin: 8px 0; padding-left: 22px; }
+.timeline-plan li { padding: 3px 0; overflow-wrap: anywhere; }
+.timeline-plan span { color: var(--text-muted, #596268); font-size: 12px; }
+.timeline-interaction { margin-top: 10px; border-left: 2px solid var(--focus, #6a86a5); padding: 2px 0 2px 12px; }
+.timeline-interaction label { display: block; margin: 8px 0; }
+.timeline-interaction textarea { display: block; width: 100%; resize: vertical; min-height: 70px; max-height: 220px; border: 1px solid var(--border, #dfe2e3); background: var(--surface, #fafafa); border-radius: 6px; padding: 8px; margin: 8px 0; }
+.timeline-interaction button { padding: 7px 12px; border-radius: 6px; }
+.timeline-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.timeline-options button { background: var(--surface-muted, #eceff0); white-space: normal; overflow-wrap: anywhere; }
+.timeline-options button[aria-pressed="true"] { outline: 2px solid var(--focus, #6a86a5); }
+.file-comparison { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; }
+.file-comparison section { min-width: 0; }
+.file-comparison h4 { margin: 4px 0; font-size: 12px; font-weight: 500; }
+.jump-latest { position: absolute; z-index: 3; bottom: 12px; right: 24px; padding: 8px 14px; background: var(--surface, #fafafa); border: 1px solid var(--border, #dfe2e3); border-radius: 16px; box-shadow: 0 2px 8px #0001; }
+@keyframes timeline-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .timeline-item.running > .timeline-icon { animation: none; } }

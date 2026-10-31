@@ -20,7 +20,15 @@ export function useAgentSession() {
   const [pending, setPending] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
-  const active = !!chat && ["running", "waiting_user"].includes(chat.state);
+  const active =
+    !!chat &&
+    [
+      "queued",
+      "running",
+      "waiting_user",
+      "waiting_input",
+      "waiting_approval",
+    ].includes(chat.state);
   const fail = useCallback((e: unknown) => {
     const message = e instanceof Error ? e.message : String(e);
     if (message.includes("[protocol_mismatch]")) {
@@ -37,7 +45,7 @@ export function useAgentSession() {
   const apply = useCallback(
     (next: SessionSnapshot) =>
       setState((previous) =>
-        !previous || next.revision >= previous.revision ? next : previous,
+        !previous || next.revision > previous.revision ? next : previous,
       ),
     [],
   );
@@ -70,7 +78,16 @@ export function useAgentSession() {
         }
       })
       .catch(report);
+    // 窗口重新获得焦点时重新获取权威快照；不重发业务命令或恢复工具。
+    const resync = () => {
+      void window.desktop
+        .chat({ type: "snapshot" })
+        .then(receive)
+        .catch(report);
+    };
+    window.addEventListener("focus", resync);
     return () => {
+      window.removeEventListener("focus", resync);
       disposed = true;
       stop();
     };
@@ -118,7 +135,13 @@ export function useAgentSession() {
       "inspect_run",
       "list_sessions",
     ].includes(value.type);
-    if (switching && (pending || active || choosing || !!connectionError))
+    if (
+      switching &&
+      (pending ||
+        (active && value.type !== "inspect_run") ||
+        choosing ||
+        !!connectionError)
+    )
       return false;
     if (switching) setPending(true);
     setError("");
