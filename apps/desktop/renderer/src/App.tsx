@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { MarkdownReply } from "./MarkdownReply";
 import { ConversationMinimap } from "./ConversationMinimap";
 import { Tooltip } from "./Tooltip";
 import { ThemePicker } from "./ThemePicker";
@@ -531,8 +532,13 @@ export function App() {
                         data-minimap-round={message.runId}
                         data-minimap-kind={message.role}
                         data-minimap-label={message.role === "user" ? "用户消息" : "Agent 回复"}>
-                        {message.text.replace(/\n{3,}/g, "\n\n") ||
-                          (message.state === "streaming" ? "正在等待模型…" : "本轮未产生文本")}
+                        {message.text
+                          ? message.role === "assistant"
+                            ? <MarkdownReply text={message.text} />
+                            : message.text
+                          : message.state === "streaming"
+                            ? "正在等待模型…"
+                            : "本轮未产生文本"}
                       </div>
                       {message.role === "assistant" &&
                         message.runId !== agent.chat?.runId &&

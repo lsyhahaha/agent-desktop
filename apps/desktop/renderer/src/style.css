@@ -1327,3 +1327,67 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .minimap-line { transition: none; }
 }
+
+/* 只为Agent回复启用Markdown排版；用户输入和工具输出仍为原始文本。 */
+.markdown-reply {
+  white-space: normal;
+  min-width: 0;
+  line-height: 1.8;
+}
+.markdown-reply > :first-child { margin-top: 0; }
+.markdown-reply > :last-child { margin-bottom: 0; }
+.markdown-reply p { margin: 0 0 12px; }
+.markdown-reply h1,
+.markdown-reply h2,
+.markdown-reply h3,
+.markdown-reply h4,
+.markdown-reply h5,
+.markdown-reply h6 { margin: 24px 0 10px; line-height: 1.5; font-weight: 650; }
+.markdown-reply h1 { font-size: 22px; }
+.markdown-reply h2 { font-size: 19px; }
+.markdown-reply h3 { font-size: 16px; }
+.markdown-reply h4,
+.markdown-reply h5,
+.markdown-reply h6 { font-size: 14px; }
+.markdown-reply ul,
+.markdown-reply ol { margin: 10px 0 14px; padding-left: 24px; }
+.markdown-reply li { margin: 4px 0; }
+.markdown-reply li > p { margin: 4px 0; }
+.markdown-reply blockquote {
+  margin: 14px 0;
+  padding: 6px 14px;
+  border-left: 3px solid var(--border, #b5c0c7);
+  color: var(--text-secondary, #596268);
+}
+.markdown-reply blockquote > :last-child { margin-bottom: 0; }
+.markdown-reply code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92em;
+  background: var(--surface-muted, #e8edef);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.markdown-reply pre {
+  max-width: 100%;
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #dfe2e3);
+  border-radius: 8px;
+  background: var(--surface-raised, #f0f1f2);
+  overflow-x: auto;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+}
+.markdown-reply pre code { padding: 0; background: none; border-radius: 0; }
+.markdown-reply a { color: var(--brand-text, #3565a8); text-underline-offset: 3px; }
+.markdown-reply hr { border: 0; border-top: 1px solid var(--border, #dfe2e3); margin: 20px 0; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: 14px 0; }
+.markdown-reply table { border-collapse: collapse; min-width: 100%; font-size: 12px; }
+.markdown-reply th,
+.markdown-reply td { border: 1px solid var(--border, #dfe2e3); padding: 7px 10px; text-align: left; }
+.markdown-reply th { background: var(--surface-raised, #f0f1f2); font-weight: 600; }
+.markdown-reply .task-list-item { list-style: none; }
+.markdown-reply input[type="checkbox"] { accent-color: var(--success-text, #38664c); margin-right: 7px; }
+.markdown-image-note { color: var(--text-muted, #78848b); }

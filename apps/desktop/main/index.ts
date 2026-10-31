@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   session,
+  shell,
   type IpcMainInvokeEvent,
 } from "electron";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -101,7 +102,27 @@ function createWindow(): void {
       });
     }
   });
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Markdown链接只能在系统浏览器打开HTTPS网页；不允许本地文件/应用协议或新Electron窗口。
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const target = new URL(url);
+      if (url.length <= 2048 && target.protocol === "https:" && !target.username && !target.password) {
+        setImmediate(() => {
+          void shell.openExternal(target.href).catch(() => {
+            // 不记录完整链接，避免泄露URL中的令牌或用户内容。
+            console.warn("[desktop] external_link_open_failed");
+            if (window && !window.isDestroyed())
+              void dialog.showMessageBox(window, {
+                type: "error", message: "无法打开链接", detail: "请检查默认浏览器，或复制链接后手动打开。",
+              }).catch(() => console.warn("[desktop] link_error_dialog_failed"));
+          });
+        });
+      }
+    } catch {
+      console.warn("[desktop] invalid_external_link");
+    }
+    return { action: "deny" };
+  });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.on("render-process-gone", (_event, detail) =>
     console.error("[desktop] renderer gone", detail.reason),

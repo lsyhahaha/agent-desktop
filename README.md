@@ -40,6 +40,7 @@ npm start
 
 ## 当前界面范围
 
+Agent回复支持Markdown标题、强调、列表、引用、代码块和GFM表格/任务列表；适配浅深色。用户输入与工具输出保留原文，远程图片不自动加载，HTTPS链接点击后在系统浏览器打开。实现、安全边界与验收见 [Markdown验收](docs/markdown-verification.md)。
 
 左下角衣服图标支持浅色、深色和跟随系统；默认跟随系统，本机记住手动选择。外观不改变任务或工具权限。验证范围见 [主题验收](docs/theme-verification.md)。
 
