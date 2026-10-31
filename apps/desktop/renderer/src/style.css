@@ -56,6 +56,7 @@ textarea {
   height: 100vh;
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   padding: 6px 6px 6px 0;
   overflow: hidden;
 }
@@ -63,6 +64,8 @@ textarea {
   -webkit-app-region: drag;
 }
 .sidebar {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -188,10 +191,10 @@ textarea {
   color: var(--text-muted, #9ca3a5);
   line-height: 1.7;
 }
-/* 底部一行留给收起与设置图标，连接状态仍在原侧栏中显示。 */
+/* 应用工具行已独立布局，导航不再为固定悬浮按钮重复占位。 */
 .sidebar-bottom {
   margin-top: auto;
-  padding: 18px 0 48px;
+  padding: 18px 0 12px;
 }
 .runtime-indicator {
   display: flex;
@@ -296,13 +299,14 @@ textarea {
 }
 .is-empty .conversation-scroll {
   flex: none;
-  min-height: 210px;
+  min-height: 0;
   overflow: visible;
 }
 .welcome {
   position: relative;
   text-align: center;
-  padding: 130px 20px 36px;
+  padding: 56px 20px 32px;
+  overflow: clip;
   isolation: isolate;
 }
 .welcome h1 {
@@ -322,11 +326,11 @@ textarea {
 .watermark {
   position: absolute;
   z-index: -1;
-  top: -38px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%) skew(-12deg);
+  transform: translate(-50%, -50%) skew(-12deg);
   font-family: Arial, sans-serif;
-  font-size: 300px;
+  font-size: 160px;
   font-weight: 750;
   line-height: 1;
   color: transparent;
@@ -885,9 +889,6 @@ textarea {
   .desktop-shell {
     grid-template-columns: 205px minmax(0, 1fr);
   }
-  .welcome {
-    padding-top: 100px;
-  }
   .welcome h1 {
     font-size: 25px;
   }
@@ -906,12 +907,11 @@ textarea {
 }
 @media (max-height: 760px) {
   .welcome {
-    padding-top: 65px;
+    padding-top: 32px;
     padding-bottom: 22px;
   }
   .watermark {
-    font-size: 230px;
-    top: -48px;
+    font-size: 120px;
   }
   .suggestions {
     margin-top: 22px;
@@ -1083,11 +1083,17 @@ textarea {
 .sidebar-collapsed .workspace-header {
   padding-left: 94px;
 }
+.app-controls {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px 10px;
+  min-width: 0;
+}
+.sidebar-collapsed .app-controls { grid-column: 1 / -1; }
 .sidebar-toggle {
-  position: fixed;
-  left: 20px;
-  bottom: 16px;
-  z-index: 2;
   width: 32px;
   height: 32px;
   padding: 7px;
@@ -1107,13 +1113,9 @@ textarea {
   flex-shrink: 0;
 }
 
-/* 与收起按钮同排；保持独立于隐藏导航，折叠后也能进入设置。 */
-.settings-controls {
-  position: fixed;
-  left: 60px;
-  bottom: 16px;
-  z-index: 2;
-}
+/* 工具触发器随布局移动；原生弹层仍使用top layer并锚定各自按钮。 */
+.settings-controls { display: flex; }
+.settings-controls > .settings-trigger { anchor-name: --settings-trigger; }
 .settings-trigger {
   display: grid;
   place-items: center;
@@ -1127,8 +1129,11 @@ textarea {
 /* 原生 top layer 避免被工作面 overflow 裁切；不创建全屏拦截层。 */
 .settings-popover {
   position: fixed;
-  inset: auto auto 58px 60px;
-  margin: 0;
+  position-anchor: --settings-trigger;
+  inset: auto;
+  bottom: anchor(top);
+  left: anchor(left);
+  margin: 0 0 8px;
   width: 180px;
   max-width: calc(100vw - 80px);
   padding: 6px;
@@ -1175,15 +1180,9 @@ textarea {
   --brand-surface: #28384f;
   --shadow: #00000030;
 }
-.theme-controls {
-  position: fixed;
-  left: 100px;
-  bottom: 16px;
-  z-index: 2;
-}
-.theme-popover {
-  left: 100px;
-}
+.theme-controls { display: flex; }
+.theme-controls > .settings-trigger { anchor-name: --theme-trigger; }
+.theme-popover { position-anchor: --theme-trigger; }
 .theme-check {
   margin-left: auto;
   min-width: 14px;
@@ -1244,7 +1243,9 @@ textarea {
   min-height: 0;
 }
 .conversation-region > .conversation-scroll { width: 100%; }
-.is-empty .conversation-region { flex: none; }
+/* 首尾auto margin共享剩余空间；空间不足时归零，保持顶部内容可滚动访问。 */
+.is-empty .conversation-region { flex: none; margin-top: auto; }
+.is-empty .suggestions { flex-shrink: 0; margin-bottom: auto; padding-bottom: 32px; }
 .conversation-minimap {
   position: absolute;
   left: 0;
@@ -1450,7 +1451,12 @@ textarea {
 .workspace-columns.has-developer .compose-area { width:calc(100% - 32px); }
 .workspace-columns.has-developer .conversation-content { width:calc(100% - 64px); }
 .workspace-columns.has-developer .workspace-header { padding-inline:16px;gap:8px; }
-.workspace-columns { grid-column:2; }
+/* 展开侧栏时工作面跨越工具行；收起时工具行占据真实空间，避免遮挡。 */
+.workspace-columns { grid-column:2; grid-row:1 / 3; }
+.sidebar-collapsed .workspace-columns { grid-row:1; }
+/* 分栏的紧凑header不能覆盖原生窗口按钮预留区。 */
+.sidebar-collapsed .workspace-columns .workspace-header,
+.sidebar-collapsed .developer-maximized .terminal-panel-header { padding-left:94px; }
 .terminal-panel { display:flex;flex-direction:column;flex:1;min-height:0;padding:10px;gap:8px; }
 .terminal-toolbar { display:flex;gap:5px;flex-wrap:wrap;font-size:12px; }
 .terminal-toolbar button { border-radius:6px;padding:6px;background:var(--surface-muted,#eceff0); }

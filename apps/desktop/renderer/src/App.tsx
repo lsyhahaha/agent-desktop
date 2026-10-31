@@ -210,83 +210,85 @@ export function App() {
         "desktop-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")
       }
     >
-      {/* 独立于隐藏导航，折叠后左下角仍可原位展开；不覆盖设置入口。 */}
-      <button
-        className="sidebar-toggle"
-        type="button"
-        aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-        title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-        aria-expanded={!sidebarCollapsed}
-        aria-controls="workspace-sidebar"
-        onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 20 20"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="10" cy="10" r="7.5" />
-          <path
-            d={
-              sidebarCollapsed
-                ? "m8.5 6.5 3.5 3.5-3.5 3.5"
-                : "m11.5 6.5-3.5 3.5 3.5 3.5"
-            }
-          />
-        </svg>
-      </button>
-      {/* 原生自动弹出层负责点击外部/Escape 关闭；只列出已实现的设置。 */}
-      <div className="settings-controls">
+      {/* 应用工具拥有独立布局行；隐藏导航后仍可访问，不覆盖聊天或终端。 */}
+      <nav className="app-controls" aria-label="应用工具">
         <button
-          ref={settingsTrigger}
-          className="settings-trigger"
+          className="sidebar-toggle"
           type="button"
-          aria-label="设置"
-          title="设置"
-          popoverTarget="settings-menu"
+          aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+          title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+          aria-expanded={!sidebarCollapsed}
+          aria-controls="workspace-sidebar"
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
         >
           <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            viewBox="0 0 20 20"
             fill="none"
             aria-hidden="true"
           >
-            <path d="m9.5 3-.5 2-1.5.9-2-.5L3 9.6l1.5 1.5v1.8L3 14.4l2.5 4.2 2-.5 1.5.9.5 2h5l.5-2 1.5-.9 2 .5 2.5-4.2-1.5-1.5v-1.8L21 9.6l-2.5-4.2-2 .5L15 5l-.5-2z" />
-            <circle cx="12" cy="12" r="3" />
+            <circle cx="10" cy="10" r="7.5" />
+            <path
+              d={
+                sidebarCollapsed
+                  ? "m8.5 6.5 3.5 3.5-3.5 3.5"
+                  : "m11.5 6.5-3.5 3.5 3.5 3.5"
+              }
+            />
           </svg>
         </button>
-        <div
-          id="settings-menu"
-          className="settings-popover"
-          ref={settingsMenu}
-          popover="auto"
-          role="dialog"
-          aria-label="设置菜单"
-          onToggle={(event) => {
-            // 打开后直接聚焦真实设置项，不在普通页面加载时抢占输入焦点。
-            if (event.newState === "open")
-              event.currentTarget
-                .querySelector<HTMLButtonElement>("button")
-                ?.focus();
-          }}
-        >
+        {/* 原生自动弹出层负责点击外部/Escape 关闭；只列出已实现的设置。 */}
+        <div className="settings-controls">
           <button
+            ref={settingsTrigger}
+            className="settings-trigger"
             type="button"
-            className="settings-menu-item"
-            onClick={() => {
-              settingsMenu.current?.hidePopover();
-              setPage("settings");
-              settingsTrigger.current?.focus();
+            aria-label="设置"
+            title="设置"
+            popoverTarget="settings-menu"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="m9.5 3-.5 2-1.5.9-2-.5L3 9.6l1.5 1.5v1.8L3 14.4l2.5 4.2 2-.5 1.5.9.5 2h5l.5-2 1.5-.9 2 .5 2.5-4.2-1.5-1.5v-1.8L21 9.6l-2.5-4.2-2 .5L15 5l-.5-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <div
+            id="settings-menu"
+            className="settings-popover"
+            ref={settingsMenu}
+            popover="auto"
+            role="dialog"
+            aria-label="设置菜单"
+            onToggle={(event) => {
+              // 打开后直接聚焦真实设置项，不在普通页面加载时抢占输入焦点。
+              if (event.newState === "open")
+                event.currentTarget
+                  .querySelector<HTMLButtonElement>("button")
+                  ?.focus();
             }}
           >
-            <span aria-hidden="true">◇</span> 模型设置
-          </button>
+            <button
+              type="button"
+              className="settings-menu-item"
+              onClick={() => {
+                settingsMenu.current?.hidePopover();
+                setPage("settings");
+                settingsTrigger.current?.focus();
+              }}
+            >
+              <span aria-hidden="true">◇</span> 模型设置
+            </button>
+          </div>
         </div>
-      </div>
-      <ThemePicker />
+        <ThemePicker />
+      </nav>
       <aside
         id="workspace-sidebar"
         className="sidebar"
