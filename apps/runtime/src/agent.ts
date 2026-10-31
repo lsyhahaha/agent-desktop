@@ -1,3 +1,5 @@
+import { AgentControl } from "./agent-control";
+import { SpawnAgentInput, ChildAgentInput } from "./tools";
 import { manualCommandReason } from "./command-approval-hook";
 import { reviewAction } from "./approval-review";
 import { pathNeedsApproval, permittedPathAccess } from "./permissions";
@@ -619,6 +621,7 @@ export class Agent {
     context: { config: { model: string; apiKey: string }; root: string | null },
     controller: AbortController,
   ) {
+    const children = new AgentControl<string>(3);
     const executionItems = new Map<string, string>();
     let toolItemId: string | undefined;
     const signal = controller.signal,
@@ -791,7 +794,35 @@ export class Agent {
           let answer = "";
           try {
             const args: unknown = JSON.parse(call.function.arguments);
-            if (call.function.name === "update_plan") {
+            if (["spawn_agent", "wait_agent", "cancel_agent"].includes(call.function.name)) {
+              item = this.add("tool", "子Agent控制 · " + call.function.name, {
+                callId: call.id, name: call.function.name, kind: "control",
+                arguments: call.function.arguments, result: "",
+              });
+              if (call.function.name === "spawn_agent") {
+                const input = SpawnAgentInput.parse(args);
+                const childId = children.spawn(this.snapshot.runId!, async (childSignal) => {
+                  const combined = AbortSignal.any([signal, childSignal]);
+                  const result = await modelStep(context.config, [
+                    { role: "system", content: "你是只读分析子Agent。仅根据提供的任务和已有知识进行分析；不能使用工具、读取文件或修改文件。不得声称已检查未提供的源码。输出简洁结论及不确定性。" },
+                    { role: "user", content: input.task },
+                  ], false, combined, () => {}, { noTools: true, maxTokens: 2048 });
+                  return result.text;
+                });
+                answer = JSON.stringify({ agent_id: childId, state: "running" });
+              } else {
+                const input = ChildAgentInput.parse(args);
+                if (call.function.name === "cancel_agent") {
+                  answer = JSON.stringify({ agent_id: input.agent_id, cancellation_requested: children.cancel(input.agent_id) });
+                } else {
+                  const result = await children.wait(input.agent_id);
+                  signal.throwIfAborted();
+                  answer = JSON.stringify(result);
+                }
+              }
+              this.finish(item);
+              row.state = "success";
+            } else if (call.function.name === "update_plan") {
               const input = PlanInput.parse(args);
               this.log.event("tool.validated", {
                 tool: call.function.name,
@@ -1208,6 +1239,7 @@ export class Agent {
       clearTimeout(this.budgetTimer);
       const cleanupAt = Date.now();
       this.log.event("cleanup.started");
+      await children.close();
       await commands.dispose();
       this.log.event("cleanup.completed", {
         durationMs: Date.now() - cleanupAt,
