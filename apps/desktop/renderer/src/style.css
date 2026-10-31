@@ -1230,3 +1230,100 @@ textarea {
 .tooltip[hidden] { display: none; }
 .tooltip-start { left: 0; }
 .tooltip-end { right: 0; }
+
+/* 缩略导航紧贴聊天区域左边线，不改变正文宽度；仅关联消息滚动区。 */
+.conversation-region {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.conversation-region > .conversation-scroll { width: 100%; }
+.is-empty .conversation-region { flex: none; }
+.conversation-minimap {
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 44px;
+  max-height: 480px;
+  margin-block: auto;
+  z-index: 4;
+}
+.minimap-rail {
+  overflow-y: auto;
+  scrollbar-width: none;
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  border-radius: 5px;
+  -webkit-app-region: no-drag;
+}
+.minimap-rail::-webkit-scrollbar { display: none; }
+.minimap-rail:focus-visible {
+  outline: 2px solid var(--focus, #6a86a5);
+  outline-offset: 2px;
+}
+.minimap-rail svg { display: block; position: relative; pointer-events: none; }
+.minimap-line {
+  fill: var(--text-muted, #78848b);
+  opacity: .45;
+  transform-origin: 0 0;
+  transition: none;
+}
+.minimap-line.is-active { fill: var(--text, #252729); opacity: .95; }
+.minimap-viewport {
+  position: absolute;
+  left: 2px;
+  width: 26px;
+  border-radius: 4px;
+  background: var(--text-muted, #78848b);
+  opacity: .1;
+  pointer-events: none;
+}
+.minimap-preview {
+  position: absolute;
+  left: 56px;
+  width: 300px;
+  max-width: calc(100vw - 110px);
+  max-height: min(220px, 100%);
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--border, #dfe2e3);
+  border-radius: 12px;
+  background: var(--surface-raised, #f0f1f2);
+  color: var(--text, #252729);
+  box-shadow: 0 8px 24px var(--shadow, #00000018);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+/* 仅预览摘要：角色通过色调区分，读屏描述不占据视觉空间。 */
+.minimap-preview p { margin: 0; }
+.minimap-question {
+  color: var(--text, #252729);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 550;
+}
+.minimap-preview .minimap-answer {
+  margin-top: 8px;
+  color: var(--text-muted, #68747c);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+/* 填满12px视觉间隙，鼠标可进入预览阅读，离开整个导航区域才关闭。 */
+.minimap-preview-bridge {
+  position: absolute;
+  left: 44px;
+  width: 12px;
+  height: min(220px, 100%);
+}
+
+/* 等距标记只在缩略区内部滚动；减少动态效果时不播放放大过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  .minimap-line { transition: none; }
+}

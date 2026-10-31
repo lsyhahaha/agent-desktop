@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ConversationMinimap } from "./ConversationMinimap";
 import { Tooltip } from "./Tooltip";
 import { ThemePicker } from "./ThemePicker";
 import { ToolRecords } from "./ToolRecords";
@@ -489,6 +490,7 @@ export function App() {
               "chat-workspace " + (empty ? "is-empty" : "has-messages")
             }
           >
+            <div className="conversation-region">
             <div
               className="conversation-scroll"
               ref={viewport}
@@ -525,10 +527,10 @@ export function App() {
                         <span className="stream-label">本轮未完成</span>
                       )}
                       <div className="message-content"
-
-
-
-                        >
+                        data-minimap-id={message.id}
+                        data-minimap-round={message.runId}
+                        data-minimap-kind={message.role}
+                        data-minimap-label={message.role === "user" ? "用户消息" : "Agent 回复"}>
                         {message.text.replace(/\n{3,}/g, "\n\n") ||
                           (message.state === "streaming" ? "正在等待模型…" : "本轮未产生文本")}
                       </div>
@@ -567,19 +569,19 @@ export function App() {
                             </button>
                             {expandedRun === message.runId &&
                               agent.inspectedRun?.runId === message.runId && (
-                                <ToolRecords tools={agent.inspectedRun.tools} />
+                                <ToolRecords tools={agent.inspectedRun.tools} runId={message.runId} />
                               )}
                           </>
                         )}
                     </article>
                   ))}
                   {!!agent.chat?.tools.length && (
-                    <ToolRecords tools={agent.chat.tools} />
+                    <ToolRecords tools={agent.chat.tools} runId={agent.chat.runId ?? undefined} />
                   )}
                   {agent.chat?.interaction && (
                     <section
                       className="approval"
-
+                      data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="等待授权"
                       aria-labelledby="approval-heading"
                     >
                       <div className="approval-icon">◇</div>
@@ -616,12 +618,12 @@ export function App() {
                     </section>
                   )}
                   {agent.chat?.state === "cancelled" && (
-                    <p className="run-note"    >
+                    <p className="run-note" data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="本轮已停止">
                       本轮已停止。未完成的输出不会加入后续模型上下文。
                     </p>
                   )}
                   {agent.chat?.state === "completed" && (
-                    <div className="usage"    >
+                    <div className="usage" data-minimap-round={agent.chat?.runId ?? undefined} data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`} data-minimap-kind="system" data-minimap-label="本轮用量">
                       本轮用量 ·{" "}
                       {agent.chat.usage.complete
                         ? `输入 ${agent.chat.usage.input} / 输出 ${agent.chat.usage.output} tokens`
@@ -630,6 +632,9 @@ export function App() {
                   )}
                 </div>
               )}
+            </div>
+            {!empty && <ConversationMinimap key={agent.sessionId ?? "draft"} viewport={viewport}
+              onNavigate={() => { follow.current = false; }} />}
             </div>
             <div className="compose-area">
               {(agent.error || agent.storageError || agent.chat?.error) && (
