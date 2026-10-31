@@ -19,8 +19,11 @@ interface Child<T> {
 }
 export class AgentControl<T> {
   private readonly children = new Map<string, Child<T>>();
-  constructor(private readonly maxChildren = 3) {
+  // 使用可直接擦除的类型语法，兼容 CI 的 Node strip-types 测试入口。
+  private readonly maxChildren: number;
+  constructor(maxChildren = 3) {
     if (!Number.isInteger(maxChildren) || maxChildren < 1) throw new Error("invalid child limit");
+    this.maxChildren = maxChildren;
   }
   spawn(parentId: string, run: (signal: AbortSignal) => Promise<T>, parentSignal?: AbortSignal): string {
     if (!parentId) throw new Error("missing parent id");
