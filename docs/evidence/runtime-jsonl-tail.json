@@ -1,0 +1,7 @@
+{
+  "kind": "actual Electron fixed JSONL startup recovery; controlled partial-tail fixtures",
+  "checks": [
+    "残缺尾部只丢弃最后一条未完成记录，保留之前完整行并记录修复",
+    "完整JSON缺换行时仅补换行，重启新增记录仍逐行可解析"
+  ]
+}

@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
 import {
+  RecoveryResult,
   StorageRequest,
   LoadedSession,
   SessionMeta,
@@ -89,6 +90,9 @@ export class SessionStore {
         this.fail(new Error("无法连接本地存储Worker。"));
       }
     });
+  }
+  async recover() {
+    return RecoveryResult.parse(await this.request({ op: "recover" }));
   }
   async selected() {
     const value = await this.request({ op: "selected" });

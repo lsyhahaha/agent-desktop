@@ -1,0 +1,17 @@
+{
+  "kind": "real Electron45.1.0 / Pino10.4.0 / SQLite / sandbox; controlled Provider and temporary data, no real model",
+  "base": "/private/tmp/runtime-jsonl-XyDhBV",
+  "results": [
+    "真实workflow全链路关键节点、单Run顺序、模型/工具/审批/文件/命令/清理/最终状态均落JSONL；只记录实际usage",
+    "工具返回running与真实进程退出分开；取消经过清理后记录最终cancelled",
+    "模型HTTP失败记录真实错误码并保留失败链路",
+    "工具局部失败与整轮完成明确区分",
+    "拒绝审批只记录拒绝事实，不生成文件读取成功事件",
+    "API Key/Prompt/文件正文/用户回答/手动终端内容未落盘；目录0700文件0600",
+    "宽工作区内Agent命令仍无法读取应用自身日志目录",
+    "正常退出后JSONL可逐行解析，Runtime结束记录完成刷新",
+    "强杀重启在新的Runtime日志关联中断Run，原任务文件不追加或重放",
+    "真实日志目录不可写/非法时采集降级诊断，Agent仍能完成且业务库可用",
+    "只清理本组件命名文件，保留最近100份任务日志，不触碰其他文件"
+  ]
+}

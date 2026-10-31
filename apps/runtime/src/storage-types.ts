@@ -105,6 +105,19 @@ export const SessionPage = z
     hasMore: z.boolean(),
   })
   .strict();
+export const RecoveryResult = z
+  .object({
+    count: z.number().int().nonnegative(),
+    runs: z
+      .array(
+        z
+          .object({ sessionId: z.string().uuid(), runId: z.string().uuid() })
+          .strict(),
+      )
+      .max(100),
+    truncated: z.boolean(),
+  })
+  .strict();
 export const StorageRequest = z.discriminatedUnion("op", [
   z.object({ op: z.literal("recover") }).strict(),
   z.object({ op: z.literal("selected") }).strict(),

@@ -30,7 +30,7 @@ npm start
 - `exec_command`：经用户确认后在只读macOS沙箱运行bash命令；支持管道、实时输出、退出码、`write_stdin`轮询/标准输入及`stop_process`停止。禁止文件写入/删除与网络，不提供关闭沙箱或提权入口。
 - 最多6次模型请求、12次工具调用、120秒主动执行；审批与提问等待独立限10分钟，单请求60秒、流空闲30秒；无自动重试。
 - 逐轮Agent执行时间线：模型、公开回复、计划、工具、审批、提问、修改、错误与总结；支持折叠详情、历史恢复和停止。工具及文件修改边界见 [时间线说明与验收](docs/execution-timeline-verification.md)。
-- 右侧仅提供真实本机PTY终端：自动打开、免启动审批、可写联网；与Run独立且不放宽Agent工具权限。Run Logs、Trace、采集、分析和导出代码已移除，聊天执行时间线仍保留。
+- 右侧仅提供真实本机PTY终端：自动打开、免启动审批、可写联网；与Run独立且不放宽Agent工具权限。Run Logs/Trace界面及其查询、分析、导出已移除，聊天执行时间线保留；Runtime关键节点现以Pino写本地JSONL。
 - API Key 用 Electron safeStorage 系统加密后保存于应用 userData；不回传已保存的明文 Key，也不进入 Runtime 环境变量或日志。
 
 ## 使用
@@ -108,3 +108,9 @@ preload校验失败会在开发者工具Console（⌘⌥I）记录 `[agent-deskt
 顶部开发者入口→Terminal，默认恢复已有会话或自动打开一个终端，直接进入用户交互Shell。支持个人Shell配置、ANSI、最多四个会话标签、尺寸同步、Ctrl+C、复制粘贴；关闭面板保留会话，切换项目或退出应用结束。终端不发送到模型，不保存为Run历史。平台、资源限制和证据见[终端对齐](docs/terminal-alignment.md)。
 
 当前手动终端是可写、可联网的本机开发环境，Agent仍只读禁网。权限、资源限制与本轮验收见[终端对齐](docs/terminal-alignment.md)。
+
+## Agent Runtime JSONL日志
+
+任务接纳、Loop、模型、工具、审批/回答、文件操作、命令退出、取消清理与最终结果记录在`userData/logs/agent-runtime/`，启动输出`[runtime-log] directory`显示实际位置。所有任务和Runtime启动/恢复统一追加到固定`runtime.jsonl`；runId保留在记录中区分任务。10MiB滚动、最多五份编号备份。可用编辑器或`tail -f`查看，不需要日志面板。默认不写Prompt、源码、工具正文或手动终端内容。格式、保留策略、预算及验收见[Runtime日志说明](docs/runtime-jsonl.md)。
+
+跟随固定日志：`tail -n 100 -F "/实际userData路径/logs/agent-runtime/runtime.jsonl"`，任务切换后无需重新选择文件。

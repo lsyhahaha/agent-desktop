@@ -1,0 +1,8 @@
+{
+  "kind": "actual Electron utilityProcess controlled uncaught JS exception; no real model",
+  "checks": [
+    "既有fatal清理退出策略保留，退出前异步日志有界排空",
+    "runtime.error/uncaught_exception记录已写入可解析JSONL",
+    "原始异常正文不落盘"
+  ]
+}

@@ -1,3 +1,4 @@
+import { nullRunLog, type RunLog } from "./runtime-log";
 import { randomUUID } from "node:crypto";
 import {
   ChatCommand,
@@ -41,6 +42,9 @@ export class Agent {
     usage: { input: 0, output: 0, complete: true },
     error: null,
   };
+  private log: RunLog = nullRunLog;
+  private loggedState = "";
+  private modelCalls = 0;
   private history: Message[] = [];
   private published: ChatSnapshot | undefined;
   /** 查询只能读已发布投影，不能观察尚未刷盘的终态或未注册的交互。 */
@@ -68,6 +72,8 @@ export class Agent {
   constructor(
     private emit: (snapshot: ChatSnapshot) => void,
     private save: (checkpoint: RunCheckpoint) => Promise<void>,
+    private createLog: (runId: string, secrets: string[]) => RunLog = () =>
+      nullRunLog,
   ) {}
   restore(snapshot: ChatSnapshot, history: Message[]) {
     if (this.busy()) throw new Error("运行中不能恢复会话");
@@ -92,6 +98,7 @@ export class Agent {
   /** 应用退出使用内部取消入口；不向renderer开放无作用域取消。 */
   cancel() {
     if (!this.controller || this.sealed || this.committing) return;
+    this.log.event("run.cancel_requested", { state: this.snapshot.state });
     this.snapshot.stopping = true;
     this.controller.abort();
     this.publish();
@@ -114,7 +121,14 @@ export class Agent {
     };
     const next = this.writes.then(() => this.save(checkpoint));
     this.writes = next;
-    return next;
+    return next.catch((error) => {
+      this.log.event(
+        "storage.failed",
+        { code: "storage_error", phase: checkpoint.state },
+        "error",
+      );
+      throw error;
+    });
   }
   private scheduleSave() {
     if (
@@ -135,6 +149,10 @@ export class Agent {
     }, 500);
   }
   private publish() {
+    if (this.loggedState !== this.snapshot.state) {
+      this.loggedState = this.snapshot.state;
+      this.log.event("run.state_changed", { state: this.snapshot.state });
+    }
     this.snapshot.revision++;
     this.published = structuredClone(this.snapshot);
     this.emit(this.published);
@@ -218,6 +236,12 @@ export class Agent {
         ...(options ? { options } : {}),
       },
     );
+    this.log.event("interaction.requested", {
+      itemId: item.id,
+      interactionId: id,
+      kind,
+    });
+    const waitingAt = Date.now();
     this.pauseBudget();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -262,6 +286,17 @@ export class Agent {
         if (signal.aborted) abort();
         else this.publish();
       });
+      this.log.event("interaction.resolved", {
+        interactionId: id,
+        kind,
+        decision:
+          typeof answer === "string"
+            ? "answered"
+            : answer
+              ? "allowed"
+              : "denied",
+        durationMs: Date.now() - waitingAt,
+      });
       if (typeof answer === "string") interaction.data.answer = answer;
       else interaction.data.decision = answer ? "allowed" : "denied";
       this.finish(interaction, answer === false ? "skipped" : "completed");
@@ -270,6 +305,11 @@ export class Agent {
       this.publish();
       return answer;
     } catch (error) {
+      this.log.event(
+        "interaction.expired",
+        { interactionId: id, kind, durationMs: Date.now() - waitingAt },
+        "warn",
+      );
       interaction.data.decision = "expired";
       this.finish(
         interaction,
@@ -355,6 +395,14 @@ export class Agent {
     });
     const controller = (this.controller = new AbortController());
     const runId = randomUUID();
+    this.log = this.createLog(runId, [context.config.apiKey]);
+    this.loggedState = "";
+    this.modelCalls = 0;
+    this.log.event("run.received", {
+      inputCharacters: cmd.text.length,
+      historyMessages: this.history.length,
+      inputSaved: false,
+    });
     this.snapshot = {
       ...this.snapshot,
       runId,
@@ -393,11 +441,23 @@ export class Agent {
         code: "storage_error",
         message: "输入未能保存，尚未请求模型。",
       };
+      this.log.event(
+        "run.failed",
+        { code: "storage_error", inputSaved: false },
+        "error",
+      );
+      void this.log.close();
       this.controller = undefined;
       this.resolveDone?.();
       this.publish();
       throw new Error(this.snapshot.error.message);
     }
+    this.log.event("storage.saved", { phase: "input" });
+    this.log.event("run.created", {
+      state: "queued",
+      inputSaved: true,
+      model: this.model,
+    });
     this.publish();
     void this.run(cmd.text, context, controller);
     return this.snapshot;
@@ -407,9 +467,30 @@ export class Agent {
     context: { config: { model: string; apiKey: string }; root: string | null },
     controller: AbortController,
   ) {
+    const executionItems = new Map<string, string>();
+    let toolItemId: string | undefined;
     const signal = controller.signal,
-      commands = new CommandRunner(signal);
+      commands = new CommandRunner(signal, (event) => {
+        if (event.phase === "started" && toolItemId)
+          executionItems.set(event.executionId, toolItemId);
+        this.log.event(
+          event.phase === "started"
+            ? "execution.started"
+            : "execution.completed",
+          {
+            executionId: event.executionId,
+            itemId: executionItems.get(event.executionId),
+            state: event.state,
+            exitCode: event.exitCode,
+            signal: event.signal,
+            bytes: event.bytes,
+            truncated: event.truncated,
+          },
+          event.phase === "completed" && event.exitCode !== 0 ? "warn" : "info",
+        );
+      });
     this.snapshot.state = "running";
+    this.log.event("run.started", { state: "running", model: this.model });
     this.startBudget();
     const messages: Message[] = [
       {
@@ -424,6 +505,11 @@ export class Agent {
     let failureState: "cancelled" | "failed" | undefined;
     try {
       for (let step = 0; step < 6; step++) {
+        this.log.event("loop.started", {
+          iteration: step + 1,
+          historyMessages: messages.length,
+          contextCharacters: JSON.stringify(messages).length,
+        });
         signal.throwIfAborted();
         if (JSON.stringify(messages).length > 140000)
           throw new ModelError("context_limit", "上下文达到上限");
@@ -435,32 +521,76 @@ export class Agent {
         signal.throwIfAborted();
         this.publish();
         let output: Extract<TimelineItem, { type: "message" }> | undefined;
-        const result = await modelStep(
-          context.config,
-          messages,
-          !!context.root,
-          signal,
-          (delta) => {
-            if (this.finishing || signal.aborted) return;
-            const row = this.snapshot.messages.at(-1)!;
-            if (row.text.length + delta.length > 65536)
-              throw new ModelError("output_limit", "本轮累计回答超出上限");
-            if (!output)
-              output = this.add("message", "Agent 进度与回复", { text: "" });
-            output.data.text += delta;
-            output.phase = "delta";
-            output.updatedAt = Date.now();
-            row.text += delta;
-            this.scheduleSave();
-            this.schedulePublish();
-          },
-        );
+        this.modelCalls++;
+        const modelAt = Date.now();
+        this.log.event("model.started", {
+          itemId: model.id,
+          model: this.model,
+          attempt: step + 1,
+        });
+        let result: Awaited<ReturnType<typeof modelStep>>;
+        try {
+          result = await modelStep(
+            context.config,
+            messages,
+            !!context.root,
+            signal,
+            (delta) => {
+              if (this.finishing || signal.aborted) return;
+              const row = this.snapshot.messages.at(-1)!;
+              if (row.text.length + delta.length > 65536)
+                throw new ModelError("output_limit", "本轮累计回答超出上限");
+              if (!output)
+                output = this.add("message", "Agent 进度与回复", { text: "" });
+              output.data.text += delta;
+              output.phase = "delta";
+              output.updatedAt = Date.now();
+              row.text += delta;
+              this.scheduleSave();
+              this.schedulePublish();
+            },
+          );
+        } catch (error) {
+          const cause = signal.aborted ? signal.reason : error;
+          this.log.event(
+            "model.failed",
+            {
+              itemId: model.id,
+              model: this.model,
+              attempt: step + 1,
+              durationMs: Date.now() - modelAt,
+              code:
+                cause instanceof ModelError
+                  ? cause.code
+                  : signal.aborted
+                    ? "cancelled"
+                    : "model_error",
+            },
+            "error",
+          );
+          throw error;
+        }
+        this.log.event("model.completed", {
+          itemId: model.id,
+          model: this.model,
+          attempt: step + 1,
+          durationMs: Date.now() - modelAt,
+          outputCharacters: result.text.length,
+          toolCount: result.calls.length,
+          usageComplete: !!result.usage,
+        });
         this.finish(model);
         if (output) this.finish(output);
         if (result.usage) {
           this.snapshot.usage.input += result.usage.input;
           this.snapshot.usage.output += result.usage.output;
           Object.assign(model.data, result.usage);
+          this.log.event("model.usage", {
+            itemId: model.id,
+            model: this.model,
+            inputTokens: result.usage.input,
+            outputTokens: result.usage.output,
+          });
         } else this.snapshot.usage.complete = false;
         messages.push({
           role: "assistant",
@@ -494,12 +624,27 @@ export class Agent {
           };
           this.snapshot.tools.push(row);
           this.audits.set(call.id, audit);
+          const calledAt = Date.now();
+          let toolPhase = "validation";
+          this.log.event("tool.requested", {
+            tool: call.function.name,
+            toolCallId: call.id,
+          });
           let item: TimelineItem | undefined;
           let answer = "";
           try {
             const args: unknown = JSON.parse(call.function.arguments);
             if (call.function.name === "update_plan") {
               const input = PlanInput.parse(args);
+              this.log.event("tool.validated", {
+                tool: call.function.name,
+                toolCallId: call.id,
+              });
+              this.log.event("tool.started", {
+                tool: call.function.name,
+                toolCallId: call.id,
+                kind: "plan",
+              });
               let plan = this.snapshot.items.find(
                 (i): i is Extract<TimelineItem, { type: "plan" }> =>
                   i.type === "plan",
@@ -509,6 +654,11 @@ export class Agent {
               if (plan.data.revisions.length >= 12)
                 throw new Error("计划更新达到上限");
               plan.data.revisions.push({ at: Date.now(), steps: input.steps });
+              this.log.event("plan.updated", {
+                itemId: plan.id,
+                steps: input.steps.length,
+                revision: plan.data.revisions.length,
+              });
               plan.updatedAt = Date.now();
               plan.phase = "delta";
               plan.status = input.steps.every((s) =>
@@ -520,12 +670,22 @@ export class Agent {
               answer = "计划已更新；计划状态由Agent申报，不代表工具执行证据。";
             } else if (call.function.name === "request_user_input") {
               const input = Question.parse(args);
+              this.log.event("tool.validated", {
+                tool: call.function.name,
+                toolCallId: call.id,
+              });
               item = this.add("tool", "向用户提问", {
                 callId: call.id,
                 name: call.function.name,
                 kind: "control",
                 arguments: call.function.arguments,
                 result: "",
+              });
+              this.log.event("tool.started", {
+                itemId: item.id,
+                tool: call.function.name,
+                toolCallId: call.id,
+                kind: "input",
               });
               answer = String(
                 await this.wait(item, "input", input.question, input.options),
@@ -554,10 +714,15 @@ export class Agent {
                 targetHash: contentHash(input.content),
                 outcome: "proposed",
               });
+              this.log.event("file.proposed", {
+                itemId: item.id,
+                path: input.path,
+              });
               item.status = "pending";
               row.state = "waiting";
               row.path = input.path;
               audit.approval = "pending";
+              toolPhase = "approval";
               const allowed = await this.wait(item, "edit_file", input.path);
               audit.approval = allowed ? "allowed" : "denied";
               if (!allowed) {
@@ -569,7 +734,13 @@ export class Agent {
                 item.status = "running";
                 row.state = "running";
                 item.data.outcome = "applying";
+                toolPhase = "execution";
                 audit.startedAt = Date.now();
+                this.log.event("tool.started", {
+                  itemId: item.id,
+                  tool: call.function.name,
+                  toolCallId: call.id,
+                });
                 await this.persist();
                 signal.throwIfAborted();
                 this.publish();
@@ -581,6 +752,10 @@ export class Agent {
                   signal,
                 );
                 item.data.outcome = "applied";
+                this.log.event("file.applied", {
+                  itemId: item.id,
+                  path: input.path,
+                });
                 this.finish(item, "completed", `已应用修改 · ${input.path}`);
                 // 立即记录写入事实；即使取消已到达，也不能将已写入标成未执行。
                 this.versions.delete(input.path);
@@ -595,6 +770,10 @@ export class Agent {
                 call.function.name,
                 call.function.arguments,
               );
+              this.log.event("tool.validated", {
+                tool: call.function.name,
+                toolCallId: call.id,
+              });
               const purpose =
                 call.function.name === "exec_command"
                   ? ExecInput.parse(args).purpose
@@ -632,6 +811,7 @@ export class Agent {
                 item.status = "pending";
                 audit.approval = "pending";
                 row.state = "waiting";
+                toolPhase = "approval";
                 const allowed = await this.wait(item, tool.kind, tool.path);
                 audit.approval = allowed ? "allowed" : "denied";
                 if (!allowed) {
@@ -644,11 +824,18 @@ export class Agent {
               if (row.state !== "denied") {
                 item.status = "running";
                 row.state = "running";
+                toolPhase = "execution";
                 audit.startedAt = Date.now();
+                this.log.event("tool.started", {
+                  itemId: item.id,
+                  tool: call.function.name,
+                  toolCallId: call.id,
+                });
                 await this.persist();
                 signal.throwIfAborted();
                 this.publish();
                 const toolItem = item;
+                toolItemId = item.id;
                 const update = (value: Execution) => {
                   if (this.sealed) return;
                   row.execution = value;
@@ -683,6 +870,11 @@ export class Agent {
                   const path = ReadInput.parse(args).path,
                     version = await readVersion(context.root, path, signal);
                   this.versions.set(path, version);
+                  this.log.event("file.read", {
+                    itemId: toolItem.id,
+                    path,
+                    bytes: Buffer.byteLength(version.text),
+                  });
                   answer = JSON.stringify({
                     content: version.text,
                     base_hash: version.hash,
@@ -722,6 +914,19 @@ export class Agent {
                 ? error.message
                 : "工具执行失败：参数、路径、权限、沙箱或资源限制不符合要求";
             row.state = "error";
+            this.log.event(
+              "tool.failed",
+              {
+                tool: call.function.name,
+                toolCallId: call.id,
+                code,
+                phase: toolPhase,
+                durationMs: Date.now() - calledAt,
+              },
+              "error",
+            );
+            if (call.function.name === "edit_file")
+              this.log.event("file.failed", { code }, "error");
             if (!item)
               item = this.add("error", "工具调用失败", {
                 code,
@@ -746,6 +951,14 @@ export class Agent {
             });
           }
           if (item?.type === "tool") item.data.result = answer;
+          this.log.event("tool.returned", {
+            itemId: item?.id,
+            tool: call.function.name,
+            toolCallId: call.id,
+            state: row.state,
+            executionId: row.execution?.execution_id,
+            durationMs: Date.now() - calledAt,
+          });
           audit.result = answer;
           audit.completedAt = Date.now();
           row.detail = answer.slice(0, 1000);
@@ -758,6 +971,10 @@ export class Agent {
           });
           this.publish();
         }
+        this.log.event("loop.continued", {
+          iteration: step + 1,
+          toolCount: result.calls.length,
+        });
         this.snapshot.messages.at(-1)!.text += "\n\n";
       }
       if (!successfulContext)
@@ -785,7 +1002,12 @@ export class Agent {
       clearTimeout(this.diskTimer);
       this.diskTimer = undefined;
       clearTimeout(this.budgetTimer);
+      const cleanupAt = Date.now();
+      this.log.event("cleanup.started");
       await commands.dispose();
+      this.log.event("cleanup.completed", {
+        durationMs: Date.now() - cleanupAt,
+      });
       const status =
         successfulContext && !signal.aborted && !this.snapshot.error
           ? "completed"
@@ -895,6 +1117,42 @@ export class Agent {
         };
         this.finish(summary, "failed", this.snapshot.error.message);
       }
+      if (this.snapshot.error?.code !== "storage_error")
+        this.log.event("storage.saved", {
+          phase: "final",
+          state: this.snapshot.state,
+        });
+      const code = this.snapshot.error?.code;
+      if (code?.includes("timeout"))
+        this.log.event("run.timeout", { code }, "warn");
+      if (
+        code &&
+        [
+          "context_limit",
+          "output_limit",
+          "tool_limit",
+          "step_limit",
+          "item_limit",
+          "run_timeout",
+        ].includes(code)
+      )
+        this.log.event("run.budget_exceeded", { code }, "warn");
+      this.log.event(
+        this.snapshot.state === "completed"
+          ? "run.completed"
+          : this.snapshot.state === "cancelled"
+            ? "run.cancelled"
+            : "run.failed",
+        {
+          state: this.snapshot.state,
+          code: code ?? null,
+          durationMs: Date.now() - this.createdAt,
+          modelCalls: this.modelCalls,
+          toolCount: this.audits.size,
+          usageComplete: this.snapshot.usage.complete,
+        },
+        this.snapshot.state === "failed" ? "error" : "info",
+      );
       this.sealed = true;
       clearTimeout(this.timer);
       this.timer = undefined;
@@ -903,6 +1161,7 @@ export class Agent {
       this.versions.clear();
       this.resolveDone?.();
       this.publish();
+      void this.log.close();
     }
   }
 }

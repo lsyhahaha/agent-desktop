@@ -196,7 +196,7 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
 async function recover() {
   const rows = db
     .prepare(
-      "SELECT r.id,s.workspace_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.state IN ('queued','running','waiting_user','waiting_input','waiting_approval')",
+      "SELECT r.id,r.session_id,s.workspace_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.state IN ('queued','running','waiting_user','waiting_input','waiting_approval')",
     )
     .all();
   // 只核对已记录的写入，不重跑修改；核对失败保持unknown。
@@ -295,6 +295,16 @@ async function recover() {
     }
     return rows.length;
   });
+  return {
+    count: rows.length,
+    runs: rows
+      .slice(0, 100)
+      .map((row) => ({
+        runId: String(row.id),
+        sessionId: String(row.session_id),
+      })),
+    truncated: rows.length > 100,
+  };
 }
 class RecordNotFound extends Error {}
 function load(id: string) {

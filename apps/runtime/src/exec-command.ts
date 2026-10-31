@@ -158,7 +158,26 @@ process.once("exit", stopAllCommands);
 export class CommandRunner {
   private jobs = new Map<string, Job>();
   private disposed = false;
-  constructor(private signal: AbortSignal) {}
+  constructor(
+    private signal: AbortSignal,
+    private observe: (event: {
+      phase: "started" | "completed";
+      executionId: string;
+      state: Execution["status"];
+      exitCode: number | null;
+      signal: string | null;
+      bytes: number;
+      truncated: boolean;
+    }) => void = () => {},
+  ) {}
+  /** 诊断观察者不得抛回进程控制链路，不传递stdout/stderr正文。 */
+  private observed(event: Parameters<CommandRunner["observe"]>[0]) {
+    try {
+      this.observe(event);
+    } catch {
+      console.warn("[exec] diagnostic_failed");
+    }
+  }
   async start(
     root: string,
     raw: unknown,
@@ -258,6 +277,15 @@ export class CommandRunner {
         for (const decoder of decoders) value.output += decoder.end();
         live.delete(job);
         SandboxManager.cleanupAfterCommand();
+        this.observed({
+          phase: "completed",
+          executionId: id,
+          state: value.status,
+          exitCode: value.exit_code,
+          signal: value.signal,
+          bytes,
+          truncated: value.truncated,
+        });
         update({ ...value });
         resolveDone();
         console.info("[exec] ended", {
@@ -268,6 +296,17 @@ export class CommandRunner {
         });
       };
       this.jobs.set(id, job);
+      child.once("spawn", () =>
+        this.observed({
+          phase: "started",
+          executionId: id,
+          state: "running",
+          exitCode: null,
+          signal: null,
+          bytes: 0,
+          truncated: false,
+        }),
+      );
       live.add(job);
       [child.stdout, child.stderr].forEach((stream, index) =>
         stream?.on("data", (chunk: Buffer) => {

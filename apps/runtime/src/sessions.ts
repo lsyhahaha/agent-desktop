@@ -1,3 +1,4 @@
+import { nullRunLog, type RuntimeLogs } from "./runtime-log";
 import { randomUUID } from "node:crypto";
 import { realpath, access } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -28,6 +29,7 @@ export class Sessions {
   constructor(
     private emit: (snapshot: SessionSnapshot) => void,
     private readonly databasePath: string,
+    private readonly logs?: RuntimeLogs,
   ) {
     this.store = new SessionStore(databasePath, (message) => {
       this.storageError = message;
@@ -36,7 +38,23 @@ export class Sessions {
     });
   }
   async initialize() {
-    await this.store.request({ op: "recover" });
+    this.logs?.root.event("recovery.started");
+    const recovery = await this.store.recover();
+    for (const run of recovery.runs)
+      this.logs?.root.event(
+        "run.interrupted",
+        {
+          sessionId: run.sessionId,
+          runId: run.runId,
+          state: "interrupted",
+          reason: "process_interrupted",
+        },
+        "warn",
+      );
+    this.logs?.root.event("recovery.completed", {
+      count: recovery.count,
+      truncated: recovery.truncated,
+    });
     protectRuntimeDirectory(await realpath(dirname(this.databasePath)));
     const selected = await this.store.selected();
     await this.activate(selected ?? this.makeMeta(null));
@@ -82,6 +100,8 @@ export class Sessions {
         if (index < 0) entry.runs.push(summary);
         else entry.runs[index] = summary;
       },
+      (runId, secrets) =>
+        this.logs?.run(entry.meta.id, runId, secrets) ?? nullRunLog,
     );
     entry.agent.restore(loaded.chat, loaded.history);
     this.entry = entry;
@@ -134,7 +154,11 @@ export class Sessions {
     const cmd = ChatCommand.parse(raw),
       current = this.current();
     if (cmd.type === "snapshot") return this.snapshot();
-    if (cmd.type === "cancel" || cmd.type === "approve" || cmd.type === "answer") {
+    if (
+      cmd.type === "cancel" ||
+      cmd.type === "approve" ||
+      cmd.type === "answer"
+    ) {
       if (cmd.sessionId !== current.meta.id) throw new Error("会话已切换");
       await current.agent.command(cmd);
       return this.snapshot();
