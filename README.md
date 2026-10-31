@@ -1,5 +1,8 @@
 # Agent Desktop
 
+[![Subagent CI](https://github.com/lsyhahaha/agent-desktop/actions/workflows/subagent-ci.yml/badge.svg?branch=feature%2Fsubagent)](https://github.com/lsyhahaha/agent-desktop/actions/workflows/subagent-ci.yml?query=branch%3Afeature%2Fsubagent)
+
+
 TypeScript + Electron + React 的本地 Coding Agent 项目。
 
 ## 运行
