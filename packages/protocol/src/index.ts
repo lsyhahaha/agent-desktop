@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { TerminalCommand, TerminalSnapshot, TerminalProfile } from "./terminal";
+export * from "./terminal";
 import { Timeline } from "./timeline";
 export * from "./timeline";
 // 构建时对Main/preload/Runtime注入同一标识；数据库格式版本独立维护，不跟随构建改变。
 declare const __APP_BUILD_ID__: string;
 export const BUILD_ID =
   typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 7;
 const buildIdentity = {
   protocolVersion: z.literal(PROTOCOL_VERSION),
   buildId: z.literal(BUILD_ID),
@@ -18,6 +20,8 @@ export const ClientDiagnostic = z
       "status",
       "chat",
       "chat_event",
+      "terminal",
+      "terminal_event",
       "settings_get",
       "settings_save",
       "workspace",
@@ -60,6 +64,8 @@ export const channels = {
   settingsSave: "model:save",
   chat: "chat:command",
   chatEvent: "chat:event",
+  terminal: "terminal:command",
+  terminalEvent: "terminal:event",
 } as const;
 export const RuntimeStatus = z
   .object({
@@ -85,6 +91,14 @@ export const WorkspaceSelection = z
 export type DesktopStatus = z.infer<typeof DesktopStatus>;
 export type WorkspaceSelection = z.infer<typeof WorkspaceSelection>;
 export interface DesktopBridge {
+  terminal(value: import("./terminal").TerminalCommand): Promise<{
+    terminal: import("./terminal").TerminalSnapshot | null;
+    terminals?: import("./terminal").TerminalTab[];
+  }>;
+  onTerminal(
+    callback: (snapshot: import("./terminal").TerminalSnapshot) => void,
+    onError?: (message: string) => void,
+  ): () => void;
   getStatus(): Promise<DesktopStatus>;
   selectWorkspace(): Promise<WorkspaceSelection>;
   getSettings(): Promise<ModelSettings>;
@@ -284,6 +298,7 @@ export const RunSummary = z
     timelineVersion: z.literal(1).nullable(),
   })
   .strict();
+export type RunSummary = z.infer<typeof RunSummary>;
 export const RunInspection = z
   .object({
     runId: z.string().uuid(),
@@ -337,6 +352,16 @@ export const RuntimeContext = z
   })
   .strict();
 export const RuntimeRequest = z.discriminatedUnion("type", [
+  z
+    .object({
+      version: z.literal(1),
+      id: z.string().uuid(),
+      type: z.literal("terminal.command"),
+      command: TerminalCommand,
+      authorizedRoot: z.string().max(4096).optional(),
+      profile: TerminalProfile.optional(),
+    })
+    .strict(),
   // 仅Main持有父端口；退出前让Runtime清理自己启动的命令进程组。
   z
     .object({
@@ -372,10 +397,19 @@ export const RuntimeResponse = z
     error: z.string().optional(),
   })
   .strict();
-export const RuntimeEvent = z
-  .object({
-    version: z.literal(1),
-    type: z.literal("agent.snapshot"),
-    payload: SessionSnapshot,
-  })
-  .strict();
+export const RuntimeEvent = z.discriminatedUnion("type", [
+  z
+    .object({
+      version: z.literal(1),
+      type: z.literal("terminal.snapshot"),
+      payload: TerminalSnapshot,
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(1),
+      type: z.literal("agent.snapshot"),
+      payload: SessionSnapshot,
+    })
+    .strict(),
+]);

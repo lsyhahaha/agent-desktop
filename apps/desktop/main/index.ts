@@ -1,5 +1,6 @@
 import {
   app,
+  clipboard,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -10,6 +11,7 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, basename } from "node:path";
 import {
+  TerminalCommand,
   channels,
   DesktopStatus,
   WorkspaceSelection,
@@ -20,6 +22,7 @@ import {
 } from "@protocol";
 import { Settings } from "./settings";
 import { realpath } from "node:fs/promises";
+import { userInfo } from "node:os";
 import { ChatCommand, ChatSnapshot, SaveSettings } from "@protocol";
 import { RuntimeHost } from "./runtime";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,15 +31,34 @@ let active = false;
 let dispatching = false;
 let selectedRoot: string | null = null;
 let currentScope: { sessionId: string; runId: string } | null = null;
+let terminalScope: { sessionId: string } | null = null;
 const settings = new Settings();
-const runtime = new RuntimeHost(join(here, "runtime.js"), (snapshot) => {
-  currentScope = snapshot.chat.runId ? { sessionId: snapshot.sessionId, runId: snapshot.chat.runId } : null;
-  active = ["queued", "running", "waiting_user", "waiting_input", "waiting_approval"].includes(snapshot.chat.state);
-  // 工作区只来自 Main 的原生目录授权或 Runtime 已保存的会话，不接受前端路径。
-  selectedRoot = snapshot.workspace?.path ?? null;
-  if (window && !window.isDestroyed())
-    window.webContents.send(channels.chatEvent, snapshot);
-});
+const runtime = new RuntimeHost(
+  join(here, "runtime.js"),
+  (snapshot) => {
+    currentScope = snapshot.chat.runId
+      ? { sessionId: snapshot.sessionId, runId: snapshot.chat.runId }
+      : null;
+    active = [
+      "queued",
+      "running",
+      "waiting_user",
+      "waiting_input",
+      "waiting_approval",
+    ].includes(snapshot.chat.state);
+    // 工作区只来自 Main 的原生目录授权或 Runtime 已保存的会话，不接受前端路径。
+    selectedRoot = snapshot.workspace?.path ?? null;
+    if (window && !window.isDestroyed())
+      window.webContents.send(channels.chatEvent, snapshot);
+  },
+  (snapshot) => {
+    terminalScope = {
+      sessionId: snapshot.sessionId,
+    };
+    if (window && !window.isDestroyed())
+      window.webContents.send(channels.terminalEvent, snapshot);
+  },
+);
 const rendererFile = join(here, "../renderer/index.html");
 function devUrl(): string | undefined {
   if (app.isPackaged || !process.env.ELECTRON_RENDERER_URL) return undefined;
@@ -108,15 +130,26 @@ function createWindow(): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
-      if (url.length <= 2048 && target.protocol === "https:" && !target.username && !target.password) {
+      if (
+        url.length <= 2048 &&
+        target.protocol === "https:" &&
+        !target.username &&
+        !target.password
+      ) {
         setImmediate(() => {
           void shell.openExternal(target.href).catch(() => {
             // 不记录完整链接，避免泄露URL中的令牌或用户内容。
             console.warn("[desktop] external_link_open_failed");
             if (window && !window.isDestroyed())
-              void dialog.showMessageBox(window, {
-                type: "error", message: "无法打开链接", detail: "请检查默认浏览器，或复制链接后手动打开。",
-              }).catch(() => console.warn("[desktop] link_error_dialog_failed"));
+              void dialog
+                .showMessageBox(window, {
+                  type: "error",
+                  message: "无法打开链接",
+                  detail: "请检查默认浏览器，或复制链接后手动打开。",
+                })
+                .catch(() =>
+                  console.warn("[desktop] link_error_dialog_failed"),
+                );
           });
         });
       }
@@ -126,11 +159,20 @@ function createWindow(): void {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
-  window.webContents.on("render-process-gone", (_event, detail) =>
-    console.error("[desktop] renderer gone", detail.reason),
-  );
+  window.webContents.on("render-process-gone", (_event, detail) => {
+    console.error("[desktop] renderer gone", detail.reason);
+    if (terminalScope)
+      void runtime
+        .terminal({ type: "close_all", sessionId: terminalScope.sessionId })
+        .catch(() => {});
+  });
   window.on("closed", () => {
-    if (currentScope && active) void runtime.chat({ type: "cancel", ...currentScope }).catch(() => {});
+    if (terminalScope)
+      void runtime
+        .terminal({ type: "close_all", sessionId: terminalScope.sessionId })
+        .catch(() => {});
+    if (currentScope && active)
+      void runtime.chat({ type: "cancel", ...currentScope }).catch(() => {});
     window = undefined;
   });
   const url = devUrl();
@@ -179,6 +221,81 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
         assertSender(event);
         if (active || dispatching) throw new Error("运行期间不能更改模型");
         return settings.save(SaveSettings.parse(raw));
+      });
+      let openingTerminal = false;
+      ipcMain.handle(channels.terminal, async (event, raw: unknown) => {
+        assertSender(event);
+        const command = TerminalCommand.parse(raw);
+        if (command.type === "paste") {
+          const current = await runtime.terminal({
+            type: "snapshot",
+            sessionId: command.sessionId,
+            terminalId: command.terminalId,
+          });
+          if (
+            current.terminal?.terminalId !== command.terminalId ||
+            current.terminal.state !== "running"
+          )
+            throw new Error("终端已失效");
+          const text = await clipboard.readText();
+          if (text.length > 32768)
+            throw new Error("粘贴超过32Ki字符，请分批操作");
+          if (/[\r\n]/.test(text)) {
+            const answer = await dialog.showMessageBox(window!, {
+              type: "warning",
+              title: "粘贴多行到本机终端",
+              message: "剪贴板包含多行文本，粘贴可能立即执行命令。",
+              buttons: ["取消", "粘贴"],
+              defaultId: 0,
+              cancelId: 0,
+            });
+            if (answer.response !== 1) return { terminal: null };
+          }
+          for (let start = 0; start < text.length;) {
+            let end = Math.min(text.length, start + 4096);
+            const code = text.charCodeAt(end - 1);
+            if (code >= 0xd800 && code <= 0xdbff && end < text.length) end--;
+            await runtime.terminal({
+              type: "write",
+              sessionId: command.sessionId,
+              terminalId: command.terminalId,
+              data: text.slice(start, end),
+            });
+            start = end;
+          }
+          return { terminal: null };
+        }
+        if (command.type !== "open") return runtime.terminal(command);
+        if (openingTerminal) throw new Error("正在启动终端");
+        openingTerminal = true;
+        try {
+          const current = await runtime.chat({ type: "snapshot" });
+          if (current.sessionId !== command.sessionId || !current.workspace)
+            throw new Error("请选择项目目录");
+          // 用户打开Terminal即启动；只保留可信工作区与Runtime侧目录校验，不弹启动确认。
+          const shell =
+            process.env.SHELL === "/bin/bash" ? "/bin/bash" : "/bin/zsh";
+          terminalScope = { sessionId: command.sessionId };
+          const opened = await runtime.terminal(
+            command,
+            current.workspace.path,
+            {
+              shell,
+              home: app.getPath("home"),
+              path: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+              user: userInfo().username,
+              lang: process.env.LANG ?? "en_US.UTF-8",
+              tmp: app.getPath("temp"),
+            },
+          );
+          if (opened.terminal)
+            terminalScope = {
+              sessionId: opened.terminal.sessionId,
+            };
+          return opened;
+        } finally {
+          openingTerminal = false;
+        }
       });
       ipcMain.handle(channels.chat, async (event, raw: unknown) => {
         assertSender(event);

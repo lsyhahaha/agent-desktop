@@ -1,0 +1,9 @@
+{
+  "kind": "actual Electron, native PTYs and controlled HOME/Provider; native message boxes counted and rejected",
+  "checks": [
+    "进入Terminal自动启动真实Shell，未调用任何原生启动确认",
+    "新增第二个终端也不审批",
+    "关闭重开恢复原有两个PTY，不重复创建",
+    "Agent命令仍进入waiting_approval，取消Run不影响手动终端"
+  ]
+}

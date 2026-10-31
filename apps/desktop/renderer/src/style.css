@@ -1432,3 +1432,53 @@ textarea {
 .jump-latest { position: absolute; z-index: 3; bottom: 12px; right: 24px; padding: 8px 14px; background: var(--surface, #fafafa); border: 1px solid var(--border, #dfe2e3); border-radius: 16px; box-shadow: 0 2px 8px #0001; }
 @keyframes timeline-pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .timeline-item.running > .timeline-icon { animation: none; } }
+
+/* 面板参与布局而不是覆盖聊天；最小窗口保留聊天与输入框的真实可用宽度。 */
+.workspace-columns { display:grid;grid-template-columns:minmax(0,1fr);min-width:0;min-height:0;gap:0; }
+.workspace-columns.has-developer { grid-template-columns:minmax(340px,1fr) 6px minmax(320px,min(var(--developer-width),calc(100% - 346px))); }
+.workspace-columns.developer-maximized { grid-template-columns:minmax(0,1fr); }
+.workspace-columns.developer-maximized > .workspace-surface { display:none; }
+.developer-panel { display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;background:var(--surface,#fafafa);border:1px solid var(--border,#dfe2e3);border-radius:14px;color:var(--text,#252729); }
+.developer-trigger { display:flex;align-items:center;justify-content:center;min-width:30px;min-height:30px;pointer-events:auto; }
+.developer-separator { cursor:col-resize;touch-action:none;position:relative; }
+.developer-separator:hover,.developer-separator:focus-visible { background:var(--focus,#6a86a5);border-radius:3px; }
+.developer-unavailable { padding:16px;color:var(--text-muted,#596268);font-size:13px;line-height:1.8; }
+/* 原工作面曾直接位于桌面第二列；嵌入分栏后显式归入聊天第一列。 */
+.workspace-columns > .workspace-surface { grid-column:1; }
+.workspace-columns.has-developer > .developer-panel { grid-column:3; }
+.workspace-columns.developer-maximized > .developer-panel { grid-column:1; }
+.workspace-columns.has-developer .compose-area { width:calc(100% - 32px); }
+.workspace-columns.has-developer .conversation-content { width:calc(100% - 64px); }
+.workspace-columns.has-developer .workspace-header { padding-inline:16px;gap:8px; }
+.workspace-columns { grid-column:2; }
+.terminal-panel { display:flex;flex-direction:column;flex:1;min-height:0;padding:10px;gap:8px; }
+.terminal-toolbar { display:flex;gap:5px;flex-wrap:wrap;font-size:12px; }
+.terminal-toolbar button { border-radius:6px;padding:6px;background:var(--surface-muted,#eceff0); }
+.terminal-panel > small { font-size:11px;line-height:1.7;color:var(--text-muted,#596268);overflow-wrap:anywhere; }
+.terminal-panel .pty-host { flex:1;min-height:120px;min-width:0;overflow:hidden; }
+.pty-host .xterm { height:100%;padding:4px; }
+/* xterm自身使用绝对定位视口，根节点不加padding，避免露出默认黑色边缘。 */
+.pty-host .xterm { padding:0; }
+.pty-host .xterm-viewport { background-color:var(--surface,#fafafa) !important; }
+/* 终端会话标签与Logs/Trace功能导航分层，控制项收进菜单，正文留给真实终端。 */
+.terminal-panel { padding:0 10px 10px;gap:4px; }
+.terminal-session-tabs { display:flex;align-items:center;gap:4px;min-height:38px;flex-shrink:0; }
+.terminal-session-tab { display:flex;align-items:center;min-width:0;max-width:190px;border-radius:7px;color:var(--text-muted,#596268); }
+.terminal-session-tab.selected { background:var(--surface-muted,#eceff0);color:var(--text,#252729); }
+.terminal-session-tab button { min-height:30px;padding:5px;font-size:12px; }
+.terminal-session-tab [role="tab"] { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0; }
+.terminal-session-tab > button:last-child { flex-shrink:0; }
+.terminal-new { min-width:28px;min-height:30px;font-size:19px;border-radius:6px; }
+.terminal-session-spacer { flex:1; }
+.terminal-menu { position:relative;flex-shrink:0;font-size:12px; }
+.terminal-menu summary { list-style:none;cursor:pointer;padding:5px 8px;min-height:28px;border-radius:6px; }
+.terminal-menu > div { position:absolute;right:0;top:32px;z-index:8;width:230px;padding:8px;background:var(--surface,#fafafa);border:1px solid var(--border,#dfe2e3);border-radius:8px;box-shadow:0 6px 20px #0002; }
+.terminal-menu button { display:block;width:100%;padding:7px;text-align:left;border-radius:5px; }
+.terminal-menu p { margin:8px 5px;line-height:1.6;color:var(--text-muted,#596268);overflow-wrap:anywhere; }
+.terminal-empty { padding:16px;color:var(--text-muted,#596268);font-size:13px; }
+.terminal-empty button { padding:7px 12px;border-radius:6px;background:var(--surface-muted,#eceff0);color:var(--text,#252729); }
+.terminal-panel .pty-host { min-height:100px; }
+/* 终端面板头部只保留标题和窗口操作，不再提供日志/Trace导航。 */
+.terminal-panel-header { display:flex;align-items:center;justify-content:space-between;min-height:40px;padding:4px 8px 4px 16px;border-bottom:1px solid var(--border,#dfe2e3);font-size:13px; }
+.terminal-panel-header > div { display:flex; }
+.terminal-panel-header button { min-width:30px;min-height:30px;border-radius:6px; }

@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  TerminalCommand,
+  TerminalSnapshot,
+  TerminalReply,
   channels,
   ModelSettings,
   SaveSettings,
@@ -16,6 +19,8 @@ import type { z } from "zod";
 type Operation =
   | "status"
   | "chat"
+  | "terminal"
+  | "terminal_event"
   | "chat_event"
   | "settings_get"
   | "settings_save"
@@ -114,6 +119,32 @@ async function invoke<T>(
   return validate(schema, value, operation);
 }
 const bridge: DesktopBridge = Object.freeze({
+  terminal: (value: unknown) =>
+    invoke(
+      "terminal",
+      channels.terminal,
+      TerminalReply,
+      validate(TerminalCommand, value, "terminal", true),
+    ),
+  onTerminal: (
+    callback: (snapshot: import("@protocol").TerminalSnapshot) => void,
+    onError?: (message: string) => void,
+  ) => {
+    const listener = (_event: unknown, raw: unknown) => {
+      const result = TerminalSnapshot.safeParse(raw);
+      if (result.success) callback(result.data);
+      else {
+        report(
+          "protocol_mismatch",
+          "terminal_event",
+          validationFields(result.error),
+        );
+        onError?.("终端协议不匹配，请完整重启应用。");
+      }
+    };
+    ipcRenderer.on(channels.terminalEvent, listener);
+    return () => ipcRenderer.removeListener(channels.terminalEvent, listener);
+  },
   getSettings: () =>
     invoke("settings_get", channels.settingsGet, ModelSettings),
   saveSettings: (value: unknown) =>

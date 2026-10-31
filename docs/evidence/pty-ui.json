@@ -1,0 +1,8 @@
+{
+  "kind": "real Electron UI and sandboxed PTY; temporary workspace",
+  "checks": [
+    "终端组件只在进入Terminal页加载",
+    "真实PTY绿色ANSI输出在实际xterm显示",
+    "浅色无默认黑色边缘，最小窗口深色主题同步且分栏不重叠"
+  ]
+}

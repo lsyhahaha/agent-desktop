@@ -1,0 +1,10 @@
+{
+  "kind": "real Electron/PTY and temporary v3 database copy; controlled Provider, no real model",
+  "checks": [
+    "旧v3数据库正常恢复会话、消息、执行时间线",
+    "界面没有Run Logs或Trace，仅保留自动启动的真实Terminal",
+    "preload不再暴露日志查询/订阅/导出接口",
+    "普通Run完成后仍有模型节点与总结，聊天时间线保留",
+    "新Run没有向停用日志表追加数据，旧日志行数保持不变"
+  ]
+}

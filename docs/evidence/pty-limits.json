@@ -1,0 +1,8 @@
+{
+  "kind": "real PTY resource-bound and application-exit integration; temporary data",
+  "checks": [
+    "真实5MB输出触发4MiB累计输出上限，会话失败并已确认进程退出",
+    "回显最多65536字符，offset/截断标记保持",
+    "正常退出应用后受监督后台sleep进程不存在"
+  ]
+}

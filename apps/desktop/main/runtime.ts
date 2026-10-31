@@ -1,6 +1,10 @@
 import { utilityProcess, type UtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
 import {
+  TerminalReply,
+  type TerminalCommand,
+  type TerminalSnapshot,
+  type TerminalProfile,
   RuntimeResponse,
   validationFields,
   RuntimeEvent,
@@ -19,6 +23,7 @@ export class RuntimeHost {
   constructor(
     private readonly entry: string,
     private readonly onSnapshot: (value: SessionSnapshot) => void,
+    private readonly onTerminal: (value: TerminalSnapshot) => void = () => {},
   ) {}
   start(databasePath: string): void {
     if (this.child) return;
@@ -48,7 +53,9 @@ export class RuntimeHost {
     child.on("message", (data: unknown) => {
       const event = RuntimeEvent.safeParse(data);
       if (event.success) {
-        this.onSnapshot(event.data.payload);
+        if (event.data.type === "terminal.snapshot")
+          this.onTerminal(event.data.payload);
+        else this.onSnapshot(event.data.payload);
         return;
       }
       const parsed = RuntimeResponse.safeParse(data);
@@ -113,6 +120,20 @@ export class RuntimeHost {
         );
       }
     });
+  }
+  async terminal(
+    command: TerminalCommand,
+    authorizedRoot?: string,
+    profile?: TerminalProfile,
+  ) {
+    return TerminalReply.parse(
+      await this.request({
+        type: "terminal.command",
+        command,
+        ...(authorizedRoot ? { authorizedRoot } : {}),
+        ...(profile ? { profile } : {}),
+      }),
+    );
   }
   async chat(
     command: unknown,

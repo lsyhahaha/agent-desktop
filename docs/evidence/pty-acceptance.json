@@ -1,0 +1,18 @@
+{
+  "kind": "real Electron45.1.0 / node-pty1.1.0 / macOS arm64 sandbox; controlled native approval and Provider; no real Provider request",
+  "base": "/private/tmp/pty-acceptance-1wUajM",
+  "results": [
+    "拒绝启动授权不产生PTY",
+    "真实node-pty + sandbox-exec交互bash：isatty、tty设备与stty尺寸",
+    "实际xterm键盘输入与ANSI输出呈现",
+    "PTY resize同步真实stty尺寸",
+    "真实PTY内创建/删除/读取.env/网络被拒绝，原文件保留",
+    "Ctrl+C中断前台命令后交互shell继续可用",
+    "切Tab、关闭重开面板不结束独立PTY，回显从有界快照恢复",
+    "真实系统剪贴板粘贴",
+    "原生剪贴板粘贴按钮直接写入已授权PTY，不向renderer返回剪贴板正文",
+    "取消Agent Run不取消独立PTY",
+    "关闭会话等待真实退出，旧写入被拒绝",
+    "切换会话关闭旧PTY及受监督shell作业"
+  ]
+}

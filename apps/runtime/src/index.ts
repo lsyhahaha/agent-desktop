@@ -1,3 +1,4 @@
+import { TerminalManager } from "./terminal";
 import { RuntimeRequest, BUILD_ID, PROTOCOL_VERSION } from "@protocol";
 import { Sessions } from "./sessions";
 import { stopAllCommands } from "./exec-command";
@@ -12,6 +13,14 @@ const sessions = new Sessions(
     port.postMessage({ version: 1, type: "agent.snapshot", payload: snapshot }),
   path,
 );
+const terminal = new TerminalManager((snapshot) =>
+  port.postMessage({
+    version: 1,
+    type: "terminal.snapshot",
+    payload: snapshot,
+  }),
+);
+process.once("exit", () => terminal.stopSync());
 const ready = sessions.initialize();
 void ready.catch(() =>
   console.error("[runtime] persistent session initialization failed"),
@@ -33,6 +42,7 @@ port.on("message", ({ data }: { data: unknown }) => {
       if (request.type === "runtime.shutdown") {
         closing = true;
         // 先取消模型/命令，再等待终态落盘和Worker关闭，不能直接exit丢掉最后一次事务。
+        await terminal.close();
         await sessions.close();
         stopAllCommands();
         payload = null;
@@ -45,12 +55,43 @@ port.on("message", ({ data }: { data: unknown }) => {
           nodeVersion: process.versions.node,
           uptimeSeconds: process.uptime(),
         };
-      } else
+      } else if (request.type === "terminal.command") {
+        const command = request.command;
+        if (command.type === "open") {
+          const current = sessions.snapshot();
+          if (
+            current.sessionId !== command.sessionId ||
+            !current.workspace ||
+            request.authorizedRoot !== current.workspace.path ||
+            !request.profile
+          )
+            throw new Error("工作区已失效");
+          payload = {
+            terminal: await terminal.open(
+              command.sessionId,
+              current.workspace.path,
+              command.cols,
+              command.rows,
+              request.profile!,
+            ),
+          };
+        } else payload = await terminal.command(command);
+      } else {
+        const before = sessions.snapshot();
+        const previousSession = before.sessionId,
+          previousRoot = before.workspace?.path;
         payload = await sessions.command(
           request.command,
           request.context,
           request.workspace,
         );
+        const after = sessions.snapshot();
+        if (
+          after.sessionId !== previousSession ||
+          after.workspace?.path !== previousRoot
+        )
+          await terminal.close();
+      }
       port.postMessage({
         version: 1,
         id: request.id,
@@ -75,19 +116,24 @@ port.on("message", ({ data }: { data: unknown }) => {
   // 变更按接纳顺序串行；停止和授权不能排在正在等待磁盘的发送/关闭请求后面。
   if (
     request.type === "runtime.ping" ||
+    (request.type === "terminal.command" && request.command.type !== "open") ||
     (request.type === "agent.command" &&
-      ["snapshot", "cancel", "approve", "answer"].includes(request.command.type))
+      ["snapshot", "cancel", "approve", "answer"].includes(
+        request.command.type,
+      ))
   )
     void handle();
   else queue = queue.then(handle, handle);
 });
 process.on("uncaughtException", () => {
   console.error("[runtime] uncaught exception");
+  terminal.stopSync();
   stopAllCommands();
   process.exit(1);
 });
 process.on("unhandledRejection", () => {
   console.error("[runtime] unhandled rejection");
+  terminal.stopSync();
   stopAllCommands();
   process.exit(1);
 });

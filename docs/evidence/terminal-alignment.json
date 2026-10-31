@@ -1,0 +1,11 @@
+{
+  "kind": "real Electron / native PTY / controlled user zshrc and native confirmation; local HTTP server, no real model",
+  "base": "/private/tmp/dev-terminal-UsjyyQ",
+  "results": [
+    "真实用户交互zsh启动配置加载，彩色目录/Git分支提示符生效；手动终端实际写入并通过本地HTTP联网",
+    "两个真实PTY环境隔离，切换标签恢复各自回显与选中身份",
+    "紧凑顶部导航/独立会话标签/菜单在最小窗口浅深主题不横向溢出",
+    "手动终端放宽不影响Agent：Agent写命令仍经审批且被沙箱拒绝，两个手动终端继续运行",
+    "关闭单标签不影响另一个PTY，关闭全部会话清理注册表"
+  ]
+}

@@ -9,6 +9,8 @@ npm install
 npm run dev
 ```
 
+新依赖安装后会自动为Electron45.1.0重建node-pty；若需手动修复原生模块，运行`npm run rebuild:native`。使用`npm ci`时保留开发依赖。
+
 关闭开发终端请按 Ctrl+C。应用菜单退出为 Cmd+Q；macOS 关闭窗口后仍可从 Dock 重开。
 
 ```sh
@@ -28,6 +30,7 @@ npm start
 - `exec_command`：经用户确认后在只读macOS沙箱运行bash命令；支持管道、实时输出、退出码、`write_stdin`轮询/标准输入及`stop_process`停止。禁止文件写入/删除与网络，不提供关闭沙箱或提权入口。
 - 最多6次模型请求、12次工具调用、120秒主动执行；审批与提问等待独立限10分钟，单请求60秒、流空闲30秒；无自动重试。
 - 逐轮Agent执行时间线：模型、公开回复、计划、工具、审批、提问、修改、错误与总结；支持折叠详情、历史恢复和停止。工具及文件修改边界见 [时间线说明与验收](docs/execution-timeline-verification.md)。
+- 右侧仅提供真实本机PTY终端：自动打开、免启动审批、可写联网；与Run独立且不放宽Agent工具权限。Run Logs、Trace、采集、分析和导出代码已移除，聊天执行时间线仍保留。
 - API Key 用 Electron safeStorage 系统加密后保存于应用 userData；不回传已保存的明文 Key，也不进入 Runtime 环境变量或日志。
 
 ## 使用
@@ -94,8 +97,14 @@ cd /Users/a1111/Desktop/agent-desktop
 npm start 2>&1 | tee -a /tmp/agent-desktop.log
 ```
 
-另一个终端可运行 `tail -n 100 -f /tmp/agent-desktop.log`；筛选本次问题使用 `rg 'protocol_mismatch|startup_blocked|client_diagnostic' /tmp/agent-desktop.log`。文件由tee保存，目前没有自动日志落盘/轮转服务。已有旧进程的stdout仍连接其原启动终端，不会自动转接到新终端。
+另一个终端可运行 `tail -n 100 -f /tmp/agent-desktop.log`；筛选本次问题使用 `rg 'protocol_mismatch|startup_blocked|client_diagnostic' /tmp/agent-desktop.log`。该启动诊断文件由tee保存，不自动轮转。Run Logs与Trace代码已删除；排查进程异常仍使用启动诊断，聊天时间线继续记录执行步骤。已有旧进程的stdout仍连接其原启动终端，不会自动转接到新终端。
 
 preload校验失败会在开发者工具Console（⌘⌥I）记录 `[agent-desktop:diagnostic]`，新版Main将受约束的诊断转发为 `[desktop] client_diagnostic` 到启动终端。日志只含类别、操作和schema字段名，不打印原始快照、消息/工具正文或Key。
 
 组件通过协议代际与同次构建标识校验后才接纳操作；版本冲突显示可读的完整退出重启提示，配置状态标为待确认，不把协议异常误报成Key丢失。新操作会被阻止，取消仍可送达。不要为解决协议错误删除SQLite数据库或重置密钥。复现与验证见[协议错误日志修复记录](docs/protocol-diagnostics-verification.md)。
+
+## 真实终端
+
+顶部开发者入口→Terminal，默认恢复已有会话或自动打开一个终端，直接进入用户交互Shell。支持个人Shell配置、ANSI、最多四个会话标签、尺寸同步、Ctrl+C、复制粘贴；关闭面板保留会话，切换项目或退出应用结束。终端不发送到模型，不保存为Run历史。平台、资源限制和证据见[终端对齐](docs/terminal-alignment.md)。
+
+当前手动终端是可写、可联网的本机开发环境，Agent仍只读禁网。权限、资源限制与本轮验收见[终端对齐](docs/terminal-alignment.md)。

@@ -66,7 +66,7 @@ if (version === 0)
   PRAGMA user_version=1;
 `),
   );
-else if (version !== 1 && version !== 2)
+else if (version !== 1 && version !== 2 && version !== 3)
   throw new Error("Unsupported database schema version");
 // v1旧轮次保留空版本，不从工具摘要伪造完整执行历史。
 if (version === 0 || version === 1)
@@ -77,6 +77,7 @@ if (version === 0 || version === 1)
   PRAGMA user_version=2;
 `),
   );
+// v3仅多了已停用的日志表；保留现有数据，不创建、不查询、不清空这些表。
 protectRuntimeDirectory(dirname(path));
 
 const json = (value: unknown) => JSON.stringify(value);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DeveloperPanel } from "./DeveloperPanel";
 import { MarkdownReply } from "./MarkdownReply";
 import { ConversationMinimap } from "./ConversationMinimap";
 import { Tooltip } from "./Tooltip";
@@ -24,6 +25,37 @@ const runLabels = {
 /** 两个页面共用已有会话连接；切换模型设置不会销毁正在运行的 Agent。 */
 export function App() {
   const agent = useAgentSession();
+  const [developerOpen, setDeveloperOpen] = useState(false),
+    [developerMax, setDeveloperMax] = useState(false),
+    [developerWidth, setDeveloperWidth] = useState(420);
+  const developerTrigger = useRef<HTMLButtonElement>(null);
+  const columns = useRef<HTMLDivElement>(null),
+    resizing = useRef(false);
+  function resizeDeveloper(clientX: number) {
+    const bounds = columns.current?.getBoundingClientRect();
+    if (bounds)
+      setDeveloperWidth(
+        Math.max(320, Math.min(bounds.width - 340, bounds.right - clientX)),
+      );
+  }
+  useEffect(() => {
+    const el = columns.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() =>
+      setDeveloperWidth((width) =>
+        Math.max(320, Math.min(width, el.clientWidth - 340)),
+      ),
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  function closeDeveloper() {
+    setDeveloperOpen(false);
+    setDeveloperMax(false);
+    requestAnimationFrame(() => developerTrigger.current?.focus());
+  }
+  // 分隔线使用指针捕获，离开窗口或取消手势不会遗留全局监听。
+
   const [page, setPage] = useState<"chat" | "settings">("chat");
   // 折叠仅影响窗口布局；保留侧栏节点和草稿，不改变会话或正在执行的运行。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -478,436 +510,531 @@ export function App() {
           )}
         </div>
       </aside>
-      <main className="workspace-surface">
-        <header className="workspace-header">
-          <div className="window-drag header-drag" />
+      <div
+        ref={columns}
+        className={
+          "workspace-columns" +
+          (developerOpen ? " has-developer" : "") +
+          (developerOpen && developerMax ? " developer-maximized" : "")
+        }
+        style={
+          { "--developer-width": `${developerWidth}px` } as React.CSSProperties
+        }
+      >
+        <main
+          className="workspace-surface"
+          hidden={developerOpen && developerMax}
+        >
+          <header className="workspace-header">
+            <div className="window-drag header-drag" />
 
-          <span>
-            {page === "settings" ? "设置" : empty ? "新任务" : currentTitle}
-          </span>
-          <div className="header-actions">
-            {agent.active && page === "settings" && (
-              <button className="stop-button" onClick={() => void stop()}>
-                ■ 停止任务
-              </button>
-            )}
-            <span
-              role="status"
-              className={"run-status " + (agent.active ? "busy" : "")}
-            >
-              {agent.connectionError
-                ? "连接异常"
-                : agent.chat?.stopping
-                  ? "正在停止…"
-                  : agent.chat?.state === "running" &&
-                      agent.chat?.tools.some((tool) => tool.state === "running")
-                    ? "工具执行中"
-                    : runLabels[agent.chat?.state ?? "idle"]}
+            <span>
+              {page === "settings" ? "设置" : empty ? "新任务" : currentTitle}
             </span>
-          </div>
-        </header>
-        {page === "settings" ? (
-          <>
-            <ModelSettingsPage
-              settings={agent.settings}
-              ready={agent.settingsReady && !agent.connectionError}
-              active={agent.active || agent.pending}
-              onSave={agent.save}
-            />
-            {agent.error && (
-              <div className="page-error error" role="alert">
-                {agent.error}
-              </div>
-            )}
-          </>
-        ) : (
-          <div
-            className={
-              "chat-workspace " + (empty ? "is-empty" : "has-messages")
-            }
-          >
-            <div className="conversation-region">
-              <div
-                className="conversation-scroll"
-                ref={viewport}
-                onScroll={() => {
-                  const el = viewport.current;
-                  if (el) {
-                    follow.current =
-                      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-                    setAwayFromLatest(!follow.current);
-                  }
+            <div className="header-actions">
+              <button
+                ref={developerTrigger}
+                className="developer-trigger"
+                aria-label="打开终端"
+                aria-expanded={developerOpen}
+                onClick={() => {
+                  setDeveloperOpen(!developerOpen);
+                  setDeveloperMax(false);
                 }}
               >
-                {empty ? (
-                  <section className="welcome">
-                    <span className="watermark" aria-hidden="true">
-                      A
-                    </span>
-                    <h1>今天有什么工作，交给我吧</h1>
-                    <p>从一次对话开始，让每一步执行都清晰可见。</p>
-                  </section>
-                ) : (
-                  <div className="conversation-content">
-                    {agent.chat?.messages.map((message) => {
-                      const current = message.runId === agent.chat?.runId;
-                      const inspection =
-                        agent.inspectedRun?.runId === message.runId
-                          ? agent.inspectedRun
-                          : null;
-                      const version = current
-                        ? agent.chat?.timelineVersion
-                        : agent.runs.find((run) => run.id === message.runId)
-                            ?.timelineVersion;
-                      const showTimeline =
-                        message.role === "assistant" &&
-                        (current || expandedRun === message.runId);
-                      return (
-                        <article
-                          className={"message " + message.role}
-                          key={message.id}
-                          aria-label={
-                            message.role === "user" ? "用户消息" : "Agent 执行"
-                          }
-                        >
-                          <div
-                            data-minimap-id={message.id}
-                            data-minimap-round={message.runId}
-                            data-minimap-kind={message.role}
-                            data-minimap-label={
-                              message.role === "user"
-                                ? "用户消息"
-                                : "Agent 回复"
-                            }
-                          >
-                            {message.role === "user" ? (
-                              <div className="message-content">
-                                {message.text}
-                              </div>
-                            ) : (
-                              <>
-                                {!current && (
-                                  <button
-                                    className="history-toggle"
-                                    aria-expanded={
-                                      expandedRun === message.runId
-                                    }
-                                    disabled={agent.pending}
-                                    onClick={async () => {
-                                      if (expandedRun === message.runId) {
-                                        setExpandedRun(null);
-                                        return;
-                                      }
-                                      if (
-                                        agent.sessionId &&
-                                        (await agent.command({
-                                          type: "inspect_run",
-                                          sessionId: agent.sessionId,
-                                          runId: message.runId,
-                                        }))
-                                      )
-                                        setExpandedRun(message.runId);
-                                    }}
-                                  >
-                                    {expandedRun === message.runId
-                                      ? "收起"
-                                      : "查看"}{" "}
-                                    本轮执行时间线
-                                  </button>
-                                )}
-                                {showTimeline && version === 1 ? (
-                                  <ExecutionTimeline
-                                    items={
-                                      current
-                                        ? agent.chat!.items
-                                        : (inspection?.items ?? [])
-                                    }
-                                    interaction={
-                                      current && !agent.chat?.stopping
-                                        ? (agent.chat?.interaction ?? null)
-                                        : null
-                                    }
-                                    onReply={reply}
-                                  />
-                                ) : (
-                                  <div className="message-content">
-                                    <MarkdownReply
-                                      text={
-                                        message.text ||
-                                        (current && agent.active
-                                          ? "任务已接纳，等待执行事件…"
-                                          : "本轮未产生文本")
-                                      }
-                                    />
-                                  </div>
-                                )}
-                                {version !== 1 && (
-                                  <p className="muted">
-                                    旧版记录，执行细节不完整
-                                  </p>
-                                )}
-                                {showTimeline && version !== 1 && (
-                                  <ToolRecords
-                                    tools={
-                                      current
-                                        ? agent.chat!.tools
-                                        : (inspection?.tools ?? [])
-                                    }
-                                    runId={message.runId}
-                                  />
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                    {agent.chat?.state === "cancelled" && (
-                      <p
-                        className="run-note"
-                        data-minimap-round={agent.chat?.runId ?? undefined}
-                        data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
-                        data-minimap-kind="system"
-                        data-minimap-label="本轮已停止"
-                      >
-                        本轮已停止。未完成的输出不会加入后续模型上下文。
-                      </p>
-                    )}
-                    {agent.chat?.state === "completed" && (
-                      <div
-                        className="usage"
-                        data-minimap-round={agent.chat?.runId ?? undefined}
-                        data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
-                        data-minimap-kind="system"
-                        data-minimap-label="本轮用量"
-                      >
-                        本轮用量 ·{" "}
-                        {agent.chat.usage.complete
-                          ? `输入 ${agent.chat.usage.input} / 输出 ${agent.chat.usage.output} tokens`
-                          : "Provider 用量信息不完整"}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              {awayFromLatest && (
-                <button
-                  className="jump-latest"
-                  onClick={() => {
-                    follow.current = true;
-                    setAwayFromLatest(false);
-                    if (viewport.current)
-                      viewport.current.scrollTop =
-                        viewport.current.scrollHeight;
-                  }}
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden="true"
                 >
-                  回到最新 ↓
+                  <rect x="2" y="3" width="16" height="14" rx="2" />
+                  <path d="m5 7 3 3-3 3m5 0h5" />
+                </svg>
+              </button>
+              {agent.active && page === "settings" && (
+                <button className="stop-button" onClick={() => void stop()}>
+                  ■ 停止任务
                 </button>
               )}
-              {!empty && (
-                <ConversationMinimap
-                  key={agent.sessionId ?? "draft"}
-                  viewport={viewport}
-                  onNavigate={() => {
-                    follow.current = false;
-                    setAwayFromLatest(true);
-                  }}
-                />
-              )}
+              <span
+                role="status"
+                className={"run-status " + (agent.active ? "busy" : "")}
+              >
+                {agent.connectionError
+                  ? "连接异常"
+                  : agent.chat?.stopping
+                    ? "正在停止…"
+                    : agent.chat?.state === "running" &&
+                        agent.chat?.tools.some(
+                          (tool) => tool.state === "running",
+                        )
+                      ? "工具执行中"
+                      : runLabels[agent.chat?.state ?? "idle"]}
+              </span>
             </div>
-            <div className="compose-area">
-              {(agent.error || agent.storageError || agent.chat?.error) && (
-                <div role="alert" className="error">
-                  {agent.error ||
-                    agent.storageError ||
-                    agent.chat?.error?.message}
+          </header>
+          {page === "settings" ? (
+            <>
+              <ModelSettingsPage
+                settings={agent.settings}
+                ready={agent.settingsReady && !agent.connectionError}
+                active={agent.active || agent.pending}
+                onSave={agent.save}
+              />
+              {agent.error && (
+                <div className="page-error error" role="alert">
+                  {agent.error}
                 </div>
               )}
-              <div className="composer-wrap">
-                <div className="composer-context">
-                  <Tooltip
-                    className="project-tooltip"
-                    content={
-                      "选择或切换项目目录" +
-                      (agent.workspace ? `\n${agent.workspace.path}` : "") +
-                      (agent.active ? "\n停止当前运行后可切换项目。" : "")
+            </>
+          ) : (
+            <div
+              className={
+                "chat-workspace " + (empty ? "is-empty" : "has-messages")
+              }
+            >
+              <div className="conversation-region">
+                <div
+                  className="conversation-scroll"
+                  ref={viewport}
+                  onScroll={() => {
+                    const el = viewport.current;
+                    if (el) {
+                      follow.current =
+                        el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                      setAwayFromLatest(!follow.current);
                     }
-                  >
-                    <button
-                      className="project-select"
-                      aria-label={
-                        agent.workspace
-                          ? `选择或切换项目目录，当前项目：${agent.workspace.name}`
-                          : "选择或切换项目目录，未选择项目"
-                      }
-                      disabled={
-                        !!agent.connectionError ||
-                        agent.active ||
-                        agent.pending ||
-                        agent.choosing
-                      }
-                      onClick={() => void agent.choose()}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path d="M2.5 5.5h5l2 2h8v9h-15zM2.5 7.5v-3h5l2 2h8v1" />
-                      </svg>
-                      <span className="project-name">{projectLabel}</span>
-                    </button>
-                  </Tooltip>
-                  <Tooltip
-                    content="普通对话无需选择项目"
-                    align="end"
-                    className="project-info-tooltip"
-                  >
-                    <button
-                      type="button"
-                      className="project-info"
-                      aria-label="项目选择说明"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <circle cx="10" cy="10" r="7.5" />
-                        <path d="M10 9v5m0-8v.5" />
-                      </svg>
-                    </button>
-                  </Tooltip>
+                  }}
+                >
+                  {empty ? (
+                    <section className="welcome">
+                      <span className="watermark" aria-hidden="true">
+                        A
+                      </span>
+                      <h1>今天有什么工作，交给我吧</h1>
+                      <p>从一次对话开始，让每一步执行都清晰可见。</p>
+                    </section>
+                  ) : (
+                    <div className="conversation-content">
+                      {agent.chat?.messages.map((message) => {
+                        const current = message.runId === agent.chat?.runId;
+                        const inspection =
+                          agent.inspectedRun?.runId === message.runId
+                            ? agent.inspectedRun
+                            : null;
+                        const version = current
+                          ? agent.chat?.timelineVersion
+                          : agent.runs.find((run) => run.id === message.runId)
+                              ?.timelineVersion;
+                        const showTimeline =
+                          message.role === "assistant" &&
+                          (current || expandedRun === message.runId);
+                        return (
+                          <article
+                            className={"message " + message.role}
+                            key={message.id}
+                            aria-label={
+                              message.role === "user"
+                                ? "用户消息"
+                                : "Agent 执行"
+                            }
+                          >
+                            <div
+                              data-minimap-id={message.id}
+                              data-minimap-round={message.runId}
+                              data-minimap-kind={message.role}
+                              data-minimap-label={
+                                message.role === "user"
+                                  ? "用户消息"
+                                  : "Agent 回复"
+                              }
+                            >
+                              {message.role === "user" ? (
+                                <div className="message-content">
+                                  {message.text}
+                                </div>
+                              ) : (
+                                <>
+                                  {!current && (
+                                    <button
+                                      className="history-toggle"
+                                      aria-expanded={
+                                        expandedRun === message.runId
+                                      }
+                                      disabled={agent.pending}
+                                      onClick={async () => {
+                                        if (expandedRun === message.runId) {
+                                          setExpandedRun(null);
+                                          return;
+                                        }
+                                        if (
+                                          agent.sessionId &&
+                                          (await agent.command({
+                                            type: "inspect_run",
+                                            sessionId: agent.sessionId,
+                                            runId: message.runId,
+                                          }))
+                                        )
+                                          setExpandedRun(message.runId);
+                                      }}
+                                    >
+                                      {expandedRun === message.runId
+                                        ? "收起"
+                                        : "查看"}{" "}
+                                      本轮执行时间线
+                                    </button>
+                                  )}
+                                  {showTimeline && version === 1 ? (
+                                    <ExecutionTimeline
+                                      items={
+                                        current
+                                          ? agent.chat!.items
+                                          : (inspection?.items ?? [])
+                                      }
+                                      interaction={
+                                        current && !agent.chat?.stopping
+                                          ? (agent.chat?.interaction ?? null)
+                                          : null
+                                      }
+                                      onReply={reply}
+                                    />
+                                  ) : (
+                                    <div className="message-content">
+                                      <MarkdownReply
+                                        text={
+                                          message.text ||
+                                          (current && agent.active
+                                            ? "任务已接纳，等待执行事件…"
+                                            : "本轮未产生文本")
+                                        }
+                                      />
+                                    </div>
+                                  )}
+                                  {version !== 1 && (
+                                    <p className="muted">
+                                      旧版记录，执行细节不完整
+                                    </p>
+                                  )}
+                                  {showTimeline && version !== 1 && (
+                                    <ToolRecords
+                                      tools={
+                                        current
+                                          ? agent.chat!.tools
+                                          : (inspection?.tools ?? [])
+                                      }
+                                      runId={message.runId}
+                                    />
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                      {agent.chat?.state === "cancelled" && (
+                        <p
+                          className="run-note"
+                          data-minimap-round={agent.chat?.runId ?? undefined}
+                          data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
+                          data-minimap-kind="system"
+                          data-minimap-label="本轮已停止"
+                        >
+                          本轮已停止。未完成的输出不会加入后续模型上下文。
+                        </p>
+                      )}
+                      {agent.chat?.state === "completed" && (
+                        <div
+                          className="usage"
+                          data-minimap-round={agent.chat?.runId ?? undefined}
+                          data-minimap-id={`event-${agent.chat?.runId}-${agent.chat?.state}`}
+                          data-minimap-kind="system"
+                          data-minimap-label="本轮用量"
+                        >
+                          本轮用量 ·{" "}
+                          {agent.chat.usage.complete
+                            ? `输入 ${agent.chat.usage.input} / 输出 ${agent.chat.usage.output} tokens`
+                            : "Provider 用量信息不完整"}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="composer">
-                  <textarea
-                    aria-label="消息"
-                    ref={composer}
-                    value={text}
-                    maxLength={16000}
-                    disabled={
-                      agent.active || agent.pending || !agent.settingsReady
-                    }
-                    onChange={(e) => changeText(e.target.value)}
-                    placeholder={
-                      agent.connectionError
-                        ? "请先完整退出并重新启动 Agent Desktop"
-                        : agent.settings.hasKey
-                          ? "和Agent Desktop一起工作"
-                          : "描述你的任务；发送前请先配置 DeepSeek 模型"
-                    }
-                    onKeyDown={(e) => {
-                      if (
-                        e.key === "Enter" &&
-                        (e.metaKey || e.ctrlKey) &&
-                        !e.nativeEvent.isComposing
-                      ) {
-                        e.preventDefault();
-                        void send();
-                      }
+                {awayFromLatest && (
+                  <button
+                    className="jump-latest"
+                    onClick={() => {
+                      follow.current = true;
+                      setAwayFromLatest(false);
+                      if (viewport.current)
+                        viewport.current.scrollTop =
+                          viewport.current.scrollHeight;
+                    }}
+                  >
+                    回到最新 ↓
+                  </button>
+                )}
+                {!empty && (
+                  <ConversationMinimap
+                    key={agent.sessionId ?? "draft"}
+                    viewport={viewport}
+                    onNavigate={() => {
+                      follow.current = false;
+                      setAwayFromLatest(true);
                     }}
                   />
-                  <div className="composer-toolbar">
-                    {/* 内置工具由 Runtime 决定，输入框不再暴露工具实现开关。 */}
-                    <span className="composer-spacer" />
-                    <div className="send-actions">
-                      <Tooltip content="选择或管理模型" align="end">
-                        <button
-                          aria-label="选择或管理模型"
-                          className="model-select"
-                          onClick={() => setPage("settings")}
+                )}
+              </div>
+              <div className="compose-area">
+                {(agent.error || agent.storageError || agent.chat?.error) && (
+                  <div role="alert" className="error">
+                    {agent.error ||
+                      agent.storageError ||
+                      agent.chat?.error?.message}
+                  </div>
+                )}
+                <div className="composer-wrap">
+                  <div className="composer-context">
+                    <Tooltip
+                      className="project-tooltip"
+                      content={
+                        "选择或切换项目目录" +
+                        (agent.workspace ? `\n${agent.workspace.path}` : "") +
+                        (agent.active ? "\n停止当前运行后可切换项目。" : "")
+                      }
+                    >
+                      <button
+                        className="project-select"
+                        aria-label={
+                          agent.workspace
+                            ? `选择或切换项目目录，当前项目：${agent.workspace.name}`
+                            : "选择或切换项目目录，未选择项目"
+                        }
+                        disabled={
+                          !!agent.connectionError ||
+                          agent.active ||
+                          agent.pending ||
+                          agent.choosing
+                        }
+                        onClick={() => void agent.choose()}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden="true"
                         >
-                          {agent.settings.hasKey
-                            ? agent.settings.model
-                            : "管理模型"}
-                          <span>⌄</span>
-                        </button>
-                      </Tooltip>
-                      {agent.active ? (
-                        <Tooltip content="停止当前生成" align="end">
+                          <path d="M2.5 5.5h5l2 2h8v9h-15zM2.5 7.5v-3h5l2 2h8v1" />
+                        </svg>
+                        <span className="project-name">{projectLabel}</span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      content="普通对话无需选择项目"
+                      align="end"
+                      className="project-info-tooltip"
+                    >
+                      <button
+                        type="button"
+                        className="project-info"
+                        aria-label="项目选择说明"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <circle cx="10" cy="10" r="7.5" />
+                          <path d="M10 9v5m0-8v.5" />
+                        </svg>
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <div className="composer">
+                    <textarea
+                      aria-label="消息"
+                      ref={composer}
+                      value={text}
+                      maxLength={16000}
+                      disabled={
+                        agent.active || agent.pending || !agent.settingsReady
+                      }
+                      onChange={(e) => changeText(e.target.value)}
+                      placeholder={
+                        agent.connectionError
+                          ? "请先完整退出并重新启动 Agent Desktop"
+                          : agent.settings.hasKey
+                            ? "和Agent Desktop一起工作"
+                            : "描述你的任务；发送前请先配置 DeepSeek 模型"
+                      }
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === "Enter" &&
+                          (e.metaKey || e.ctrlKey) &&
+                          !e.nativeEvent.isComposing
+                        ) {
+                          e.preventDefault();
+                          void send();
+                        }
+                      }}
+                    />
+                    <div className="composer-toolbar">
+                      {/* 内置工具由 Runtime 决定，输入框不再暴露工具实现开关。 */}
+                      <span className="composer-spacer" />
+                      <div className="send-actions">
+                        <Tooltip content="选择或管理模型" align="end">
                           <button
-                            aria-label="停止生成"
-                            disabled={agent.chat?.stopping}
-                            className="send-button stop"
-                            onClick={() => void stop()}
+                            aria-label="选择或管理模型"
+                            className="model-select"
+                            onClick={() => setPage("settings")}
                           >
-                            ■
+                            {agent.settings.hasKey
+                              ? agent.settings.model
+                              : "管理模型"}
+                            <span>⌄</span>
                           </button>
                         </Tooltip>
-                      ) : (
-                        <Tooltip content={sendHint} align="end">
-                          <button
-                            aria-label="发送消息"
-                            className="send-button"
-                            disabled={
-                              agent.pending ||
-                              !!agent.storageError ||
-                              !!agent.connectionError ||
-                              !text.trim() ||
-                              !agent.settings.hasKey ||
-                              !agent.settingsReady ||
-                              agent.choosing
-                            }
-                            onClick={() => void send()}
-                          >
-                            ↑
-                          </button>
-                        </Tooltip>
-                      )}
+                        {agent.active ? (
+                          <Tooltip content="停止当前生成" align="end">
+                            <button
+                              aria-label="停止生成"
+                              disabled={agent.chat?.stopping}
+                              className="send-button stop"
+                              onClick={() => void stop()}
+                            >
+                              ■
+                            </button>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip content={sendHint} align="end">
+                            <button
+                              aria-label="发送消息"
+                              className="send-button"
+                              disabled={
+                                agent.pending ||
+                                !!agent.storageError ||
+                                !!agent.connectionError ||
+                                !text.trim() ||
+                                !agent.settings.hasKey ||
+                                !agent.settingsReady ||
+                                agent.choosing
+                              }
+                              onClick={() => void send()}
+                            >
+                              ↑
+                            </button>
+                          </Tooltip>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
+                {(agent.connectionError || !agent.settings.hasKey) && (
+                  <p className="composer-footnote">
+                    {agent.connectionError ? (
+                      <span>恢复连接后再发送消息。</span>
+                    ) : !agent.settings.hasKey ? (
+                      <button
+                        className="text-link"
+                        onClick={() => setPage("settings")}
+                      >
+                        先配置 DeepSeek API Key，开始真实对话
+                      </button>
+                    ) : null}
+                  </p>
+                )}
               </div>
-              {(agent.connectionError || !agent.settings.hasKey) && (
-                <p className="composer-footnote">
-                  {agent.connectionError ? (
-                    <span>恢复连接后再发送消息。</span>
-                  ) : !agent.settings.hasKey ? (
-                    <button
-                      className="text-link"
-                      onClick={() => setPage("settings")}
-                    >
-                      先配置 DeepSeek API Key，开始真实对话
-                    </button>
-                  ) : null}
-                </p>
+              {empty && (
+                <div className="suggestions">
+                  <span>试试这些任务</span>
+                  <button
+                    disabled={agent.active}
+                    onClick={() =>
+                      changeText("请介绍一下你能如何协助我理解一个代码项目。")
+                    }
+                  >
+                    ✧<span>一起梳理一个项目的思路</span>
+                    <span>↗</span>
+                  </button>
+                  <button
+                    disabled={agent.active || !agent.workspace}
+                    title={
+                      agent.workspace
+                        ? "准备读取 README 的任务"
+                        : "请先选择项目目录"
+                    }
+                    onClick={() => {
+                      changeText("请读取 README.md，说明项目用途和启动方式。");
+                    }}
+                  >
+                    ▤<span>读取 README，了解项目如何启动</span>
+                    <span>↗</span>
+                  </button>
+                </div>
               )}
             </div>
-            {empty && (
-              <div className="suggestions">
-                <span>试试这些任务</span>
-                <button
-                  disabled={agent.active}
-                  onClick={() =>
-                    changeText("请介绍一下你能如何协助我理解一个代码项目。")
+          )}
+        </main>
+        {developerOpen && (
+          <>
+            {!developerMax && (
+              <div
+                className="developer-separator"
+                role="separator"
+                aria-label="调整开发者面板宽度"
+                aria-orientation="vertical"
+                aria-valuemin={320}
+                aria-valuemax={Math.max(
+                  320,
+                  (columns.current?.clientWidth ?? 1000) - 340,
+                )}
+                aria-valuenow={developerWidth}
+                tabIndex={0}
+                onPointerDown={(e) => {
+                  resizing.current = true;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  if (resizing.current) resizeDeveloper(e.clientX);
+                }}
+                onPointerUp={(e) => {
+                  resizing.current = false;
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }}
+                onPointerCancel={() => {
+                  resizing.current = false;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    const width = columns.current?.getBoundingClientRect();
+                    if (width)
+                      resizeDeveloper(
+                        width.right -
+                          developerWidth +
+                          (e.key === "ArrowLeft" ? -20 : 20),
+                      );
                   }
-                >
-                  ✧<span>一起梳理一个项目的思路</span>
-                  <span>↗</span>
-                </button>
-                <button
-                  disabled={agent.active || !agent.workspace}
-                  title={
-                    agent.workspace
-                      ? "准备读取 README 的任务"
-                      : "请先选择项目目录"
-                  }
-                  onClick={() => {
-                    changeText("请读取 README.md，说明项目用途和启动方式。");
-                  }}
-                >
-                  ▤<span>读取 README，了解项目如何启动</span>
-                  <span>↗</span>
-                </button>
-              </div>
+                }}
+              />
             )}
-          </div>
+            <DeveloperPanel
+              workspacePath={agent.workspace?.path ?? null}
+              sessionId={agent.sessionId}
+              onClose={closeDeveloper}
+              onCollapse={closeDeveloper}
+              maximized={developerMax}
+              onMaximize={() => setDeveloperMax(!developerMax)}
+            />
+          </>
         )}
-      </main>
+      </div>
     </div>
   );
 }

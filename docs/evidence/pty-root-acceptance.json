@@ -1,0 +1,7 @@
+{
+  "kind": "real Electron authorization and workspace lifecycle with controlled native dialogs",
+  "checks": [
+    "空草稿复用相同Session ID切换目录，旧PTY仍被关闭",
+    "确认期间目录发生变化，原授权不被用于启动新目录PTY"
+  ]
+}

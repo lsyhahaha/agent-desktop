@@ -1,0 +1,9 @@
+{
+  "kind": "actual Electron/native PTY with temporary HOME/project and controlled native confirmation",
+  "checks": [
+    "无项目不启动，选择项目后自动打开一个真实终端",
+    "无打开终端空状态或按钮，重复focus不重复启动",
+    "切功能Tab或关闭重开恢复原PTY，不重复确认",
+    "取消原生启动确认后不循环弹窗或自动创建进程"
+  ]
+}
