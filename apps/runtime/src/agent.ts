@@ -808,7 +808,7 @@ export class Agent {
                     { role: "user", content: input.task },
                   ], false, combined, () => {}, { noTools: true, maxTokens: 2048 });
                   return result.text;
-                });
+                }, signal);
                 answer = JSON.stringify({ agent_id: childId, state: "running" });
               } else {
                 const input = ChildAgentInput.parse(args);
