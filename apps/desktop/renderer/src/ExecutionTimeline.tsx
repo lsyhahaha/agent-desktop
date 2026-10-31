@@ -13,6 +13,7 @@ const states = {
   unknown: "结果未确认",
 };
 const icons: Record<TimelineItem["type"], string> = {
+  approval_review: "M10 2 17 5v5c0 4-7 8-7 8s-7-4-7-8V5z",
   model: "M4 4h12v12H4z M7 7h6v6H7z",
   message: "M3 4h14v10H7l-4 3z",
   plan: "M7 5h10M7 10h10M7 15h10M3 5h1M3 10h1M3 15h1",
@@ -43,6 +44,20 @@ function Disclosure({
 }
 function Detail({ item }: { item: TimelineItem }) {
   switch (item.type) {
+    case "approval_review":
+      return (
+        <>
+          <p>
+            {item.data.tool} · {item.data.reason}
+          </p>
+          <small>
+            本次参数摘要：{item.data.digest.slice(0, 16)}
+            {item.data.inputTokens !== undefined
+              ? ` · 审查用量 ${item.data.inputTokens}/${item.data.outputTokens}`
+              : ""}
+          </small>
+        </>
+      );
     case "message":
       return (
         <div className="timeline-prose">
@@ -233,8 +248,8 @@ function Interaction({
         {interaction.kind === "edit_file"
           ? "批准将替换以上文件内容，请先展开文件前后对照审阅。仅修改该文件；冲突会阻止写入。"
           : interaction.kind === "read_file"
-            ? "文件内容会发送到 DeepSeek 并保存在本机；本次仅允许读取该文件，最多32KiB。"
-            : "命令在只读沙箱运行，禁止写入和网络。输出发送到 DeepSeek 并保存在本机；最长60秒，最多32KiB。"}
+            ? "文件内容会发送到 DeepSeek 并保存在本机；本次仅允许读取所示路径，最多32KiB。"
+            : "批准仅允许执行本次命令或输入，仍受该轮权限与沙箱限制；仅显式申请边界外权限的操作可使用宿主文件与网络。输出会发送到 DeepSeek 并保存在本机。"}
       </p>
       <div className="approval-actions">
         <button disabled={pending} onClick={() => void submit(false)}>

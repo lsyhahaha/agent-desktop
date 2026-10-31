@@ -5,18 +5,19 @@ export const ReadInput = z
   .object({ path: z.string().min(1).max(1024) })
   .strict();
 export { validatePath } from "./workspace-path";
-import { workspacePath } from "./workspace-path";
-/** 只读普通UTF-8文件。保留32KiB、链接、身份变化与取消检查，调用方负责逐次审批。 */
+import { type PathAccess, workspacePath } from "./workspace-path";
+/** 只读普通UTF-8文件。保留32KiB、链接、身份变化与取消检查，调用方按冻结的 Run 权限模式授权。 */
 export async function readFile(
   root: string,
   path: string,
   signal: AbortSignal,
+  access: PathAccess = "workspace",
 ): Promise<string> {
   const {
     target,
     stat: before,
     verify: check,
-  } = await workspacePath(root, path, signal);
+  } = await workspacePath(root, path, signal, false, access);
   if (!before.isFile() || before.nlink !== 1 || before.size > 32768)
     throw new Error("只支持不超过32KiB的普通文本文件，不允许硬链接");
   const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);

@@ -67,6 +67,7 @@ export class Sessions {
       id: randomUUID(),
       title: "新任务",
       customTitle: false,
+      permissionMode: "ask",
       taskStatus: "open",
       workspace,
       createdAt: now,
@@ -93,6 +94,7 @@ export class Sessions {
           id: run.runId,
           state: run.state,
           toolCount: run.tools.length,
+          permissionMode: run.permissionMode,
           createdAt: run.createdAt,
           timelineVersion: run.timelineVersion,
         };
@@ -131,6 +133,7 @@ export class Sessions {
       sessionId: entry.meta.id,
       title: entry.meta.title,
       taskStatus: entry.meta.taskStatus,
+      permissionMode: entry.meta.permissionMode,
       workspace: entry.meta.workspace,
       sessionPage: this.page,
       hasMoreSessions: this.hasMore,
@@ -170,6 +173,7 @@ export class Sessions {
         cmd.runId === current.agent.snapshot.runId
           ? {
               runId: cmd.runId,
+              permissionMode: current.agent.snapshot.runPermissionMode,
               tools: structuredClone(current.agent.view().tools),
               items: structuredClone(current.agent.view().items),
               timelineVersion: current.agent.view().timelineVersion,
@@ -179,6 +183,22 @@ export class Sessions {
       return this.snapshot();
     }
     if (current.agent.busy()) throw new Error("请先停止当前任务");
+    if (cmd.type === "set_permission") {
+      if (cmd.sessionId !== current.meta.id) throw new Error("会话已变化");
+      const meta = {
+        ...current.meta,
+        permissionMode: cmd.mode,
+        updatedAt: Date.now(),
+      };
+      await this.store.request({ op: "meta", meta });
+      current.meta = meta;
+      this.logs?.root.event("permission.changed", {
+        sessionId: meta.id,
+        permissionMode: cmd.mode,
+      });
+      this.publish();
+      return this.snapshot();
+    }
     if (cmd.type === "list_sessions") {
       this.page = cmd.page;
       await this.refresh();
@@ -194,6 +214,7 @@ export class Sessions {
         );
       meta.workspace =
         workspace === undefined ? current.meta.workspace : workspace;
+      meta.permissionMode = "ask";
       await this.activate(meta);
       this.page = 0;
       await this.refresh();
@@ -266,7 +287,10 @@ export class Sessions {
       current.meta.updatedAt = Date.now();
       if (!current.meta.customTitle && !current.agent.snapshot.messages.length)
         current.meta.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
-      await current.agent.command(cmd, context);
+      await current.agent.command(cmd, {
+        ...context,
+        permissionMode: current.meta.permissionMode,
+      });
       this.page = 0;
       await this.refresh();
       this.publish();

@@ -15,7 +15,9 @@ function isProtected(path: string) {
   );
 }
 
-/** 两个只读工具共用路径策略。rootOnly 只用于目录工具的“.”，不能用于读取文件。 */
+/** 仅由Runtime完成模式/单次审批后注入；不得接受模型自报该字段。 */
+export type PathAccess = "workspace" | "approved" | "full";
+/** 目录/读取/编辑工具共用路径策略。rootOnly 只用于目录工具的“.”，不能用于读取文件。 */
 export function validatePath(path: string, rootOnly = false): string[] {
   if (rootOnly && path === ".") return [];
   if (
@@ -47,13 +49,23 @@ export async function workspacePath(
   path: string,
   signal: AbortSignal,
   rootOnly = false,
+  access: PathAccess = "workspace",
 ) {
-  const parts = validatePath(path, rootOnly);
+  if (path.includes("\0") || path.length > 1024) throw new Error("无效路径");
   signal.throwIfAborted();
   const canonical = await realpath(root);
+  // 绝对路径仍以规范工作区为边界；不能因为路径写法改变授权范围。
+  const workspaceRelative = isAbsolute(path)
+    ? relative(canonical, resolve(path)) || "."
+    : path;
+  const parts =
+    access === "workspace" ? validatePath(workspaceRelative, rootOnly) : [];
   const rootStat = await lstat(canonical);
   if (!rootStat.isDirectory()) throw new Error("工作区不是目录");
-  const target = resolve(canonical, ...parts);
+  const target =
+    access === "workspace"
+      ? resolve(canonical, ...parts)
+      : resolve(canonical, path);
   const verify = async () => {
     signal.throwIfAborted();
     let current = canonical;
@@ -65,17 +77,20 @@ export async function workspacePath(
     }
     const real = await realpath(target),
       rel = relative(canonical, real);
-    if (isProtected(real))
+    if (access !== "full" && isProtected(real))
       throw new Error("禁止工具访问应用自己的会话数据目录");
     if (
-      (!rootOnly && !rel) ||
-      rel === ".." ||
-      rel.startsWith(".." + sep) ||
-      isAbsolute(rel)
+      access === "workspace" &&
+      ((!rootOnly && !rel) ||
+        rel === ".." ||
+        rel.startsWith(".." + sep) ||
+        isAbsolute(rel))
     )
       throw new Error("路径超出工作区");
     signal.throwIfAborted();
-    return lstat(target);
+    const info = await lstat(target);
+    if (info.isSymbolicLink()) throw new Error("不支持符号链接目标");
+    return info;
   };
   return { canonical, target, verify, stat: await verify() };
 }

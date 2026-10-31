@@ -36,6 +36,11 @@ _Avoid_：用Run代替整段聊天。
 
 **ExecutionItem（执行条目）**：Runtime产生的单轮可观察事实，拥有稳定ID、顺序、独立状态与详情；对应Codex的Item概念。本项目Session/Run分别对应Thread/Turn。计划中的待办只属于计划内容，不是已执行条目。
 
-**ReadVersion（读取版本）**：本轮获得用户批准的文件读取结果与身份/内容摘要，用于后续编辑审批与冲突检测，不从历史或模型自报内容恢复写权限。
+**ReadVersion（读取版本）**：本轮按权限模式授权的文件读取结果与身份/内容摘要，用于后续编辑审批与冲突检测，不从历史或模型自报内容恢复写权限。
 
 当前采用有界快照和SQLite时间线投影，不是完整事件溯源或持久化命令去重系统；具体范围见`docs/execution-timeline-verification.md`。
+
+## 权限模式（已实现，2026-10-31）
+
+**PermissionMode**：会话持久化的 `ask / auto_review / full_access`；每个Run接纳时冻结，新会话默认ask，运行中拒绝更改。
+**ApprovalReview**：独立无工具模型请求对具体参数的审查，不是执行工具、不永久提升会话权限。只有明确allow自动授权，其他结果转原有Interaction；详见docs/permissions.md。

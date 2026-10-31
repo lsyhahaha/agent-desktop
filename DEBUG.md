@@ -51,7 +51,7 @@
 
 例如，流式输出停止时先区分模型没有返回、流解析失败、Runtime退出、传输失败、投影未更新和视图未刷新；不能看到“界面不动”就只改React，也不能看到通用IPC错误就断言模型Key失效。
 
-**当前权限必须分清：** 用户手动终端是可写、可联网的本机Shell，自动启动且无需启动审批；Agent命令仍使用只读禁网沙箱和工具审批。终端可执行某命令，不证明Agent有相同权限；Agent拒绝写入也不代表手动终端故障。个人Shell启动文件会执行用户配置，排障时不要擅自source真实配置来模拟效果。
+**当前权限必须分清：** 用户手动终端是可写、可联网的本机Shell，自动启动且无需启动审批；Agent按会话权限模式执行：普通模式可读写工作区，项目外或联网操作请求批准/独立审查，完全访问走宿主；所有模式仍由内置钩子对删除/无法确认无删除的命令及非空stdin强制人工审批。终端可执行某命令，不证明Agent有相同权限；Agent拒绝某操作也不代表手动终端故障。个人Shell启动文件会执行用户配置，排障时不要擅自source真实配置来模拟效果。
 
 ## 4. 用现有诊断排障
 
@@ -162,3 +162,7 @@ UI历史恢复不等于执行恢复。中断Run、未知工具结果和已失效
 用户已批准Pino本地日志，实际格式、路径和故障边界见[Runtime日志说明](docs/runtime-jsonl.md)。所有任务统一追加固定runtime.jsonl，用runId/步骤ID串联模型、工具、审批、取消清理和结果；启动终端会显示实际日志目录。正常任务可用编辑器或tail跟随查看，不恢复Run Logs/Trace界面。
 
 日志写入异常优先查看`[runtime-log] degraded`，它不等于Agent业务失败。强杀可能丢失未提交记录，不能因缺少一行就重跑副作用。不要为复现而开启原始Prompt/源码/PTY正文采集。现有Main/Console诊断和聊天时间线继续保留；后续新增transport、远程采集或扩展字段仍按组件复用与授权要求评估。
+
+权限排障先检查会话 `permissionMode` 与当前轮 `runPermissionMode`，两者分别表示后续任务配置和该轮冻结配置。检查 JSONL 中 `permission.changed`、`run.created.permissionMode`、`approval.review_started/completed`，审查错误转人工不等于操作已执行。完整边界及受控验收见 [权限说明](docs/permissions.md)。
+
+删除审批排障先看 `command-approval-hook.ts` → Agent.authorize → `approval.hook_required` → Interaction。不能把强制人工审批改成独立模型代批，也不能把删除许可当成宿主提权；未知脚本等待人工属于保守策略。

@@ -1482,3 +1482,62 @@ textarea {
 .terminal-panel-header { display:flex;align-items:center;justify-content:space-between;min-height:40px;padding:4px 8px 4px 16px;border-bottom:1px solid var(--border,#dfe2e3);font-size:13px; }
 .terminal-panel-header > div { display:flex; }
 .terminal-panel-header button { min-width:30px;min-height:30px;border-radius:6px; }
+
+/* 权限入口遵循输入区密度；弹层锚定触发器，随聊天区域宽度移动。 */
+.permission-trigger {
+  anchor-name: --permission-trigger;
+  border-radius: 18px;
+  padding: 5px 10px;
+  color: var(--text-muted, #68757a);
+  white-space: nowrap;
+}
+.permission-menu {
+  position: fixed;
+  position-anchor: --permission-trigger;
+  inset: auto;
+  bottom: anchor(top);
+  left: anchor(left);
+  margin: 0 0 8px;
+  width: 390px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border: 1px solid var(--border, #dfe2e3);
+  border-radius: 14px;
+  color: var(--text, #252729);
+  background: var(--surface, #fafafa);
+  box-shadow: 0 6px 24px var(--shadow, #1c2c3520);
+}
+.permission-menu p {
+  margin: 2px 10px 8px;
+  color: var(--text-muted, #68757a);
+}
+.permission-choice {
+  display: grid;
+  grid-template-columns: 22px 1fr 16px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+.permission-choice strong {
+  display: block;
+  font-weight: 550;
+}
+.permission-choice small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted, #68757a);
+  line-height: 1.4;
+}
+.full-access,
+.full-access small {
+  color: var(--warning-text, #ae5d23);
+}
+.permission-note {
+  display: block;
+  margin: 8px 10px 2px;
+  color: var(--text-muted, #68757a);
+  line-height: 1.5;
+}

@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ChatSnapshot, WorkspaceSelection, RunSummary } from "@protocol";
+import {
+  PermissionMode,
+  ChatSnapshot,
+  WorkspaceSelection,
+  RunSummary,
+} from "@protocol";
 
 /** 数据库不是可信反序列化源：历史版本、损坏及人工修改的数据都须通过有界schema。 */
 export const ModelMessage = z
@@ -35,6 +40,7 @@ export const SessionMeta = z
     id: z.string().uuid(),
     title: z.string().min(1).max(60),
     customTitle: z.boolean(),
+    permissionMode: PermissionMode,
     taskStatus: z.enum(["open", "completed"]),
     workspace: WorkspaceSelection,
     createdAt: z.number(),
@@ -55,6 +61,8 @@ export const ToolAudit = z
       "not_required",
       "expired",
     ]),
+    permissionMode: PermissionMode.optional(),
+    approvalSource: z.enum(["workspace", "user", "review", "full"]).optional(),
     startedAt: z.number().nullable(),
     completedAt: z.number().nullable(),
   })
@@ -69,6 +77,7 @@ export const RunCheckpoint = z
     items: ChatSnapshot.shape.items,
     timelineVersion: z.literal(1).nullable(),
     state: ChatSnapshot.shape.state,
+    permissionMode: PermissionMode,
     messages: z.array(ChatSnapshot.shape.messages.element).length(2),
     tools: z.array(ToolAudit).max(12),
     usage: ChatSnapshot.shape.usage,

@@ -23,6 +23,10 @@ import { protectRuntimeDirectory } from "./workspace-path";
 import { BUILD_ID } from "@protocol";
 
 const messages = {
+  "approval.hook_required": "内置命令钩子要求人工审批",
+  "permission.changed": "用户切换审批权限",
+  "approval.review_started": "开始独立模型审批审查",
+  "approval.review_completed": "独立审批审查结束",
   "runtime.started": "Runtime已启动",
   "runtime.stopping": "Runtime准备退出",
   "runtime.stopped": "Runtime业务资源已清理，准备退出",
@@ -108,6 +112,9 @@ const fieldNames = [
   "revision",
   "count",
   "inputSaved",
+  "permissionMode",
+  "digest",
+  "reviewDecision",
 ] as const;
 type Field = (typeof fieldNames)[number];
 export type RuntimeLogFields = Partial<

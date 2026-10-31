@@ -32,6 +32,8 @@ Pino输出时间`time`（UTC ISO8601）、字符串`level`、固定中文`msg`�
 | 事件 | 实际含义 |
 |---|---|
 | run.received / storage.saved / run.created | 收到输入、业务保存完成、确认接纳；保存失败不会宣称已接纳 |
+| approval.hook_required | 内置命令钩子要求人工审批，包含固定原因码deletion_requires_review/unverified_command_requires_review/stdin_requires_review；不包含命令或输入正文 |
+| permission.changed / approval.review_started / approval.review_completed | 会话模式变更、独立审批审查开始/完成（含转人工、取消）；记录模式、候选参数摘要、实际耗时与用量，不写审查Prompt或原始理由。具体边界见[权限说明](permissions.md) |
 | run.started / run.state_changed | 运行开始及真实状态改变 |
 | loop.started / loop.continued | 当前迭代、历史规模、上下文字符量；工具结果回填后继续模型 |
 | model.started / model.completed / model.failed | 单次模型请求、观察耗时、文本字符数、调用数量或失败码 |
@@ -54,7 +56,7 @@ Task层与工具/进程层结果分开。耗时为实际观察区间，整轮包
 
 - 白名单只接受固定事件与受控标量；默认不记录Prompt、用户输入/回答、源码、修改全文、工具参数/正文、stdout/stderr正文、环境或用户手动PTY内容。文件事件可含已校验的相对路径，路径和模型名仍可能含项目命名信息。
 - 已知当前Provider Key与常见令牌形式在采集端额外删除，Pino固定字段redact再做附加保护；不承诺正则能识别任意秘密。原始Error/stack不直接透传，错误用稳定code、阶段和关联ID定位。
-- 目录0700，文件0600；固定文件打开时拒绝链接/非普通文件/硬链接并校正权限，初次或重启以追加方式打开，滚动后独占创建。日志目录加入原有Agent路径保护；人类本机终端的权限不改变。
+- 目录0700，文件0600；固定文件打开时拒绝链接/非普通文件/硬链接并校正权限，初次或重启以追加方式打开，滚动后独占创建。日志目录加入默认Agent路径保护；用户明确启用的完全访问/宿主操作具有真实宿主权限，不承诺该边界下继续隔离日志；人类本机终端的权限不改变。
 - Pino destination使用异步文件输出，无额外日志worker线程/transport。启动/滚动期间缓冲最多128条且64KiB，destination配置maxLength=65536（按库计量）。仅关键边界记录，不逐token或逐stdout chunk落盘。
 - 每任务最多512条及约1MiB的保守上下文预算；Runtime上下文每次启动最多5000条/约8MiB预算，达到上下文上限只停止该上下文，其他任务继续。写入失败或缓冲溢出则采集降级，启动终端输出固定`[runtime-log] degraded`类别，不把原始正文作为回退内容，不改变Agent结果。
 - 当前固定文件按真实序列化字节计数，10MiB前排空/关闭Pino destination，将自有编号文件后移并重新打开runtime.jsonl，最多保留五份备份。不另装轮转transport，也不按任务新建文件；旧的100份任务/20份启动文件及14天保留策略停用。只操作runtime.jsonl和runtime.1～5.jsonl，不清理旧ID文件、业务库或其他文件；正常新增约60MiB保留量，不是硬磁盘配额。

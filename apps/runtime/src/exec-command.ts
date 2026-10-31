@@ -8,9 +8,12 @@ import {
 import { z } from "zod";
 import { workspacePath, protectedRuntimePaths } from "./workspace-path";
 
-/** 命令字符串只交给沙箱内的非登录 bash；模型不能指定环境、提权或关闭沙箱。 */
+/** 默认使用沙箱内非登录 bash；仅 Runtime 对本次操作批准或完全访问模式可走宿主。 */
 export const ExecInput = z
   .object({
+    sandbox_permissions: z
+      .enum(["workspace", "require_escalated"])
+      .default("workspace"),
     purpose: z.enum(["command", "verification"]).default("command"),
     command: z
       .string()
@@ -56,7 +59,7 @@ let initializing: Promise<void> | undefined;
 let launching = false;
 const literal = (path: string) => ({ path, literal: true as const });
 
-/** SDK 是进程级单例；所有会话共用固定默认拒绝策略，仅每次包装重开当前工作区读取。 */
+/** SDK 是进程级单例；所有会话共用默认拒绝策略，每次包装只开放当前工作区读写。 */
 function policy(root?: string): SandboxRuntimeConfig {
   return {
     network: {
@@ -96,9 +99,24 @@ function policy(root?: string): SandboxRuntimeConfig {
         "/opt/homebrew",
         ...(root ? [literal(root)] : []),
       ],
-      allowWrite: [],
-      // SDK 还会放行默认临时目录：显式根目录 deny 必须覆盖这些隐含写权限。
-      denyWrite: [literal("/")],
+      allowWrite: root ? [literal(root)] : [],
+      // SDK 默认临时目录同样可写；凭据与应用数据目录显式拒绝。
+      denyWrite: root
+        ? [
+            ...protectedRuntimePaths().map(literal),
+            ...[
+              ".env",
+              ".env.*",
+              "**/.env",
+              "**/.env.*",
+              "**/*.pem",
+              "**/*.key",
+              "**/credentials",
+              "**/id_rsa",
+              "**/id_ed25519",
+            ].map((path) => `${root}/${path}`),
+          ]
+        : [literal("/")],
     },
     allowPty: false,
     allowAppleEvents: false,
@@ -169,6 +187,7 @@ export class CommandRunner {
       bytes: number;
       truncated: boolean;
     }) => void = () => {},
+    private fullAccess = false,
   ) {}
   /** 诊断观察者不得抛回进程控制链路，不传递stdout/stderr正文。 */
   private observed(event: Parameters<CommandRunner["observe"]>[0]) {
@@ -182,6 +201,7 @@ export class CommandRunner {
     root: string,
     raw: unknown,
     update: (value: Execution) => void,
+    elevated = false,
   ): Promise<Execution> {
     this.signal.throwIfAborted();
     if (this.disposed || launching || live.size || this.jobs.size >= 12)
@@ -189,24 +209,39 @@ export class CommandRunner {
     launching = true;
     try {
       const args = ExecInput.parse(raw);
-      const location = await workspacePath(root, args.path, this.signal, true);
+      if (
+        args.sandbox_permissions === "require_escalated" &&
+        !elevated &&
+        !this.fullAccess
+      )
+        throw new Error("没有该命令的提权批准");
+      const host = this.fullAccess || elevated;
+      const location = await workspacePath(
+        root,
+        args.path,
+        this.signal,
+        true,
+        host ? "full" : "workspace",
+      );
       // 凭据拒绝规则需要拼接glob；不允许工作区名改变这些规则的匹配语义。
-      if (/[\[\]*?{}\\]/.test(location.canonical))
+      if (!host && /[\[\]*?{}\\]/.test(location.canonical))
         throw new Error("命令工作区名称暂不支持glob特殊字符");
       if (!location.stat.isDirectory())
-        throw new Error("命令工作目录必须是项目内目录");
-      await initialize(this.signal);
+        throw new Error("命令工作目录必须是实际目录");
+      if (!host) await initialize(this.signal);
       this.signal.throwIfAborted();
       if (this.disposed) throw new Error("运行已结束");
       const id = randomUUID();
-      const wrapped = await SandboxManager.wrapWithSandboxArgv(
-        args.command,
-        "/bin/bash",
-        policy(location.canonical),
-        this.signal,
-        location.target,
-        { commandId: id },
-      );
+      const wrapped = host
+        ? { argv: ["/bin/bash", "--noprofile", "--norc", "-c", args.command] }
+        : await SandboxManager.wrapWithSandboxArgv(
+            args.command,
+            "/bin/bash",
+            policy(location.canonical),
+            this.signal,
+            location.target,
+            { commandId: id },
+          );
       await location.verify();
       this.signal.throwIfAborted();
       if (this.disposed) throw new Error("运行已结束");
@@ -359,7 +394,7 @@ export class CommandRunner {
     }
     return { ...job.value };
   }
-  /** 有界标准输入，不提供TTY或任意PID；仍在首次批准的同一只读沙箱中执行。 */
+  /** 有界标准输入，不提供TTY或任意PID；沿用启动时已确定的执行边界，不会因stdin再次提升权限。 */
   async write(id: string, chars: string, wait: number): Promise<Execution> {
     const job = this.jobs.get(id);
     if (!job || this.disposed) throw new Error("执行句柄不属于本轮或已失效");

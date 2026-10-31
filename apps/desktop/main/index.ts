@@ -315,6 +315,32 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
             dispatching = false;
           }
         }
+        // 真实宿主访问必须经过 Main 的原生确认；renderer 不能伪造已确认字段。
+        if (cmd.type === "set_permission" && cmd.mode === "full_access") {
+          if (active || dispatching)
+            throw new Error("请先停止当前运行再修改权限");
+          dispatching = true;
+          try {
+            const before = await runtime.chat({ type: "snapshot" });
+            if (before.sessionId !== cmd.sessionId)
+              throw new Error("会话已变化");
+            const choice = await dialog.showMessageBox(window!, {
+              type: "warning",
+              title: "启用完全访问权限？",
+              message: "允许 Agent 读写电脑上的文件并联网执行命令？",
+              detail:
+                "该会话后续任务将以当前用户权限执行，常规操作不逐次审批，删除及无法确认无删除的命令仍须人工确认。可能修改或删除项目外文件、访问个人数据及联网。手动终端权限不受影响。",
+              buttons: ["取消", "启用完全访问权限"],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true,
+            });
+            if (choice.response !== 1) return before;
+            return await runtime.chat(cmd);
+          } finally {
+            dispatching = false;
+          }
+        }
         return runtime.chat(cmd);
       });
       ipcMain.handle(channels.status, async (event) => {

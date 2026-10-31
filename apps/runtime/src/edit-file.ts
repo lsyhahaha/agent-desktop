@@ -3,7 +3,7 @@ import { open, rename, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join } from "node:path";
 import { readFile } from "./read-file";
-import { workspacePath } from "./workspace-path";
+import { type PathAccess, workspacePath } from "./workspace-path";
 
 export const contentHash = (text: string) =>
   createHash("sha256").update(text).digest("hex");
@@ -20,9 +20,10 @@ export async function readVersion(
   root: string,
   path: string,
   signal: AbortSignal,
+  access: PathAccess = "workspace",
 ): Promise<ReadVersion> {
-  const location = await workspacePath(root, path, signal);
-  const text = await readFile(root, path, signal);
+  const location = await workspacePath(root, path, signal, false, access);
+  const text = await readFile(root, path, signal, access);
   const after = await location.verify();
   if (
     location.stat.ino !== after.ino ||
@@ -55,6 +56,7 @@ export async function applyEdit(
   base: ReadVersion,
   after: string,
   signal: AbortSignal,
+  access: PathAccess = "workspace",
 ) {
   if (
     Buffer.byteLength(after, "utf8") > 32768 ||
@@ -63,7 +65,7 @@ export async function applyEdit(
       after
   )
     throw new Error("候选内容必须是不超过32KiB的UTF-8文本");
-  const location = await workspacePath(root, path, signal);
+  const location = await workspacePath(root, path, signal, false, access);
   const temporary = join(
     dirname(location.target),
     `.agent-edit-${randomUUID()}.tmp`,
@@ -85,7 +87,7 @@ export async function applyEdit(
     } finally {
       await file.close();
     }
-    const current = await readVersion(root, path, signal);
+    const current = await readVersion(root, path, signal, access);
     if (
       current.hash !== base.hash ||
       current.dev !== base.dev ||

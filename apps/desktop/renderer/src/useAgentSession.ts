@@ -134,6 +134,7 @@ export function useAgentSession() {
       "clear",
       "inspect_run",
       "list_sessions",
+      "set_permission",
     ].includes(value.type);
     if (
       switching &&
@@ -195,6 +196,7 @@ export function useAgentSession() {
     inspectedRun: state?.inspectedRun ?? null,
     storageError: state?.storageError ?? null,
     sessionId: state?.sessionId ?? null,
+    permissionMode: state?.permissionMode ?? "ask",
     sessions,
     taskStatus: state?.taskStatus ?? "open",
     workspace,

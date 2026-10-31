@@ -64,6 +64,7 @@ export async function modelStep(
   tools: boolean,
   signal: AbortSignal,
   onText: (text: string) => void,
+  options: { noTools?: boolean; maxTokens?: number } = {},
 ): Promise<{
   text: string;
   calls: Call[];
@@ -87,8 +88,18 @@ export async function modelStep(
         stream: true,
         stream_options: { include_usage: true },
         thinking: { type: "disabled" },
-        max_tokens: 4096,
-        tools: tools ? toolDefinitions : toolDefinitions.filter((tool) => ["update_plan", "request_user_input"].includes(tool.function.name)),
+        max_tokens: options.maxTokens ?? 4096,
+        ...(options.noTools
+          ? {}
+          : {
+              tools: tools
+                ? toolDefinitions
+                : toolDefinitions.filter((tool) =>
+                    ["update_plan", "request_user_input"].includes(
+                      tool.function.name,
+                    ),
+                  ),
+            }),
       }),
     });
   } catch {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { PermissionMode } from "./permissions";
+export * from "./permissions";
 import { TerminalCommand, TerminalSnapshot, TerminalProfile } from "./terminal";
 export * from "./terminal";
 import { Timeline } from "./timeline";
@@ -7,7 +9,7 @@ export * from "./timeline";
 declare const __APP_BUILD_ID__: string;
 export const BUILD_ID =
   typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 const buildIdentity = {
   protocolVersion: z.literal(PROTOCOL_VERSION),
   buildId: z.literal(BUILD_ID),
@@ -128,6 +130,13 @@ export const SaveSettings = z
 export const ChatCommand = z.discriminatedUnion("type", [
   z
     .object({
+      type: z.literal("set_permission"),
+      sessionId: z.string().uuid(),
+      mode: PermissionMode,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("list_sessions"),
       page: z.number().int().min(0).max(100000),
     })
@@ -193,6 +202,7 @@ export const ChatSnapshot = z
   .object({
     revision: z.number().int().nonnegative(),
     runId: z.string().nullable(),
+    runPermissionMode: PermissionMode,
     state: z.enum([
       "idle",
       "running",
@@ -294,6 +304,7 @@ export const RunSummary = z
     id: z.string().uuid(),
     state: ChatSnapshot.shape.state,
     toolCount: z.number().int().min(0).max(12),
+    permissionMode: PermissionMode,
     createdAt: z.number(),
     timelineVersion: z.literal(1).nullable(),
   })
@@ -302,6 +313,7 @@ export type RunSummary = z.infer<typeof RunSummary>;
 export const RunInspection = z
   .object({
     runId: z.string().uuid(),
+    permissionMode: PermissionMode,
     tools: ChatSnapshot.shape.tools,
     items: Timeline,
     timelineVersion: z.literal(1).nullable(),
@@ -313,6 +325,7 @@ export const SessionSnapshot = z
   .object({
     revision: z.number().int().nonnegative(),
     sessionId: z.string().uuid(),
+    permissionMode: PermissionMode,
     taskStatus: z.enum(["open", "completed"]),
     workspace: WorkspaceSelection,
     title: z.string().min(1).max(60),

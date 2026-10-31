@@ -59,6 +59,22 @@ export const TimelineItem = z.discriminatedUnion("type", [
   z
     .object({
       ...base,
+      type: z.literal("approval_review"),
+      data: z
+        .object({
+          tool: z.string().max(100),
+          digest: z.string().length(64),
+          decision: z.enum(["reviewing", "allow", "manual"]),
+          reason: z.string().max(500),
+          inputTokens: z.number().optional(),
+          outputTokens: z.number().optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
       type: z.literal("model"),
       data: z
         .object({

@@ -1,6 +1,6 @@
 import { opendir, lstat } from "node:fs/promises";
 import { join } from "node:path";
-import { workspacePath, validatePath } from "./workspace-path";
+import { workspacePath, validatePath, type PathAccess } from "./workspace-path";
 import { z } from "zod";
 export const DirectoryInput = z
   .object({
@@ -15,8 +15,9 @@ export async function listDirectory(
   path: string,
   depth: number,
   signal: AbortSignal,
+  access: PathAccess = "workspace",
 ) {
-  const first = await workspacePath(root, path, signal, true);
+  const first = await workspacePath(root, path, signal, true, access);
   if (!first.stat.isDirectory()) throw new Error("目标不是目录");
   const queue = [{ path, level: 0 }];
   const entries: { path: string; type: "directory" | "file" }[] = [];
@@ -26,7 +27,7 @@ export async function listDirectory(
     outputBytes = 0;
   while (queue.length) {
     const next = queue.shift()!;
-    const location = await workspacePath(root, next.path, signal, true);
+    const location = await workspacePath(root, next.path, signal, true, access);
     if (!location.stat.isDirectory()) throw new Error("目录在遍历期间改变");
     const directory = await opendir(location.target, { bufferSize: 16 });
     // for-await在正常完成、抛错或break时关闭目录句柄；每次I/O后检查取消。
@@ -39,7 +40,7 @@ export async function listDirectory(
       const child =
         next.path === "." ? entry.name : next.path + "/" + entry.name;
       try {
-        validatePath(child);
+        if (access === "workspace") validatePath(child);
         if (["dist", "out", "build", "coverage"].includes(entry.name)) {
           skipped++;
           continue;
@@ -53,7 +54,7 @@ export async function listDirectory(
           skipped++;
           continue;
         }
-        await workspacePath(root, child, signal);
+        await workspacePath(root, child, signal, false, access);
         const bytes = Buffer.byteLength(child) + 48;
         if (outputBytes + bytes > 16000) {
           truncated = true;
@@ -83,6 +84,6 @@ export async function listDirectory(
     truncated,
     skipped,
     notice:
-      "仅返回指定深度内的允许条目；隐藏/凭据/链接/依赖与构建目录已跳过。truncated=true表示达到总条目或扫描预算，请缩小path继续列目录。",
+      "仅返回指定深度内的允许条目；条目按权限和文件类型过滤，链接与构建目录跳过。truncated=true表示达到总条目或扫描预算，请缩小path继续列目录。",
   };
 }

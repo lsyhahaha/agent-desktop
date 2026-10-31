@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PermissionPicker } from "./PermissionPicker";
 import { DeveloperPanel } from "./DeveloperPanel";
 import { MarkdownReply } from "./MarkdownReply";
 import { ConversationMinimap } from "./ConversationMinimap";
@@ -886,6 +887,24 @@ export function App() {
                     />
                     <div className="composer-toolbar">
                       {/* 内置工具由 Runtime 决定，输入框不再暴露工具实现开关。 */}
+                      <PermissionPicker
+                        mode={agent.permissionMode}
+                        disabled={
+                          agent.active ||
+                          agent.pending ||
+                          agent.choosing ||
+                          !agent.sessionId ||
+                          !!agent.connectionError ||
+                          !!agent.storageError
+                        }
+                        onSelect={(mode) =>
+                          agent.command({
+                            type: "set_permission",
+                            sessionId: agent.sessionId!,
+                            mode,
+                          })
+                        }
+                      />
                       <span className="composer-spacer" />
                       <div className="send-actions">
                         <Tooltip content="选择或管理模型" align="end">

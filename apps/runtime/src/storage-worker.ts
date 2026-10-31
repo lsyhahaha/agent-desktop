@@ -66,7 +66,7 @@ if (version === 0)
   PRAGMA user_version=1;
 `),
   );
-else if (version !== 1 && version !== 2 && version !== 3)
+else if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
   throw new Error("Unsupported database schema version");
 // v1旧轮次保留空版本，不从工具摘要伪造完整执行历史。
 if (version === 0 || version === 1)
@@ -76,6 +76,13 @@ if (version === 0 || version === 1)
   CREATE TABLE timeline_items(run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, item_id TEXT NOT NULL, position INTEGER NOT NULL, data_json TEXT NOT NULL, PRIMARY KEY(run_id,item_id), UNIQUE(run_id,position)) STRICT;
   PRAGMA user_version=2;
 `),
+  );
+// 会话模式和历史Run模式分列保存；旧数据默认ask，不会自动升级权限。
+if (Number(version) <= 3)
+  transaction(() =>
+    db.exec(
+      `ALTER TABLE sessions ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'ask'; ALTER TABLE runs ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'ask'; PRAGMA user_version=4;`,
+    ),
   );
 // v3仅多了已停用的日志表；保留现有数据，不创建、不查询、不清空这些表。
 protectRuntimeDirectory(dirname(path));
@@ -91,6 +98,7 @@ function metaOf(row: Record<string, unknown>): SessionMeta {
     id: row.id,
     title: row.title,
     customTitle: !!row.custom_title,
+    permissionMode: row.permission_mode,
     taskStatus: row.task_status,
     workspace: parse(row.workspace_json),
     createdAt: row.created_at,
@@ -102,7 +110,7 @@ function saveMeta(meta: SessionMeta) {
     meta.id,
   );
   db.prepare(
-    `INSERT INTO sessions VALUES (?,?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET title=excluded.title, custom_title=excluded.custom_title, task_status=excluded.task_status, workspace_json=excluded.workspace_json, updated_at=excluded.updated_at, selected=1`,
+    `INSERT INTO sessions(id,title,custom_title,task_status,workspace_json,created_at,updated_at,selected,permission_mode) VALUES (?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, custom_title=excluded.custom_title, task_status=excluded.task_status, workspace_json=excluded.workspace_json, updated_at=excluded.updated_at, selected=1,permission_mode=excluded.permission_mode`,
   ).run(
     meta.id,
     meta.title,
@@ -111,6 +119,7 @@ function saveMeta(meta: SessionMeta) {
     json(meta.workspace),
     meta.createdAt,
     meta.updatedAt,
+    meta.permissionMode,
   );
 }
 function auditRows(runId: string) {
@@ -151,7 +160,7 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
       throw new Error("Uncommitted model context");
     saveMeta(meta);
     db.prepare(
-      `INSERT INTO runs(id,session_id,model,state,created_at,revision,usage_json,error_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,revision=excluded.revision,usage_json=excluded.usage_json,error_json=excluded.error_json`,
+      `INSERT INTO runs(id,session_id,model,state,created_at,revision,usage_json,error_json,permission_mode) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,revision=excluded.revision,usage_json=excluded.usage_json,error_json=excluded.error_json`,
     ).run(
       run.runId,
       meta.id,
@@ -161,6 +170,7 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
       run.revision,
       json(run.usage),
       json(run.error),
+      run.permissionMode,
     );
     db.prepare("UPDATE runs SET timeline_version=? WHERE id=?").run(
       run.timelineVersion,
@@ -196,7 +206,7 @@ function saveRun(meta: SessionMeta, run: RunCheckpoint) {
 async function recover() {
   const rows = db
     .prepare(
-      "SELECT r.id,r.session_id,s.workspace_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.state IN ('queued','running','waiting_user','waiting_input','waiting_approval')",
+      "SELECT r.id,r.session_id,r.permission_mode,s.workspace_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.state IN ('queued','running','waiting_user','waiting_input','waiting_approval')",
     )
     .all();
   // 只核对已记录的写入，不重跑修改；核对失败保持unknown。
@@ -216,6 +226,7 @@ async function recover() {
               workspace.path,
               item.data.path,
               AbortSignal.timeout(5000),
+              row.permission_mode === "full_access" ? "full" : "approved",
             );
             if (current.hash === item.data.targetHash) {
               item.data.outcome = "applied";
@@ -297,12 +308,10 @@ async function recover() {
   });
   return {
     count: rows.length,
-    runs: rows
-      .slice(0, 100)
-      .map((row) => ({
-        runId: String(row.id),
-        sessionId: String(row.session_id),
-      })),
+    runs: rows.slice(0, 100).map((row) => ({
+      runId: String(row.id),
+      sessionId: String(row.session_id),
+    })),
     truncated: rows.length > 100,
   };
 }
@@ -334,6 +343,7 @@ function load(id: string) {
     chat: {
       revision: last ? last.revision : 0,
       runId: last?.id ?? null,
+      runPermissionMode: last?.permission_mode ?? "ask",
       state: last?.state ?? "idle",
       messages,
       items: last ? itemRows(String(last.id)) : [],
@@ -351,6 +361,7 @@ function load(id: string) {
       state: run.state,
       createdAt: run.created_at,
       timelineVersion: run.timeline_version ?? null,
+      permissionMode: run.permission_mode,
       toolCount: Number(
         db
           .prepare("SELECT COUNT(*) AS n FROM tool_calls WHERE run_id=?")
@@ -434,12 +445,13 @@ parentPort!.on("message", async (raw: unknown) => {
       case "inspect": {
         const owned = db
           .prepare(
-            "SELECT id,timeline_version FROM runs WHERE id=? AND session_id=?",
+            "SELECT id,timeline_version,permission_mode FROM runs WHERE id=? AND session_id=?",
           )
           .get(request.runId, request.sessionId);
         if (!owned) throw new RecordNotFound("Run not owned by session");
         value = {
           runId: request.runId,
+          permissionMode: owned.permission_mode,
           items: itemRows(request.runId),
           timelineVersion: owned.timeline_version ?? null,
           tools: auditRows(request.runId).map((t) => t.view),
