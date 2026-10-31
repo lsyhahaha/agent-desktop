@@ -23,6 +23,9 @@ import { protectRuntimeDirectory } from "./workspace-path";
 import { BUILD_ID } from "@protocol";
 
 const messages = {
+  "subagent.created": "子Agent启动意图已创建",
+  "subagent.completed": "子Agent生命周期已结束",
+  "subagent.cancel_requested": "请求取消子Agent",
   "approval.hook_required": "内置命令钩子要求人工审批",
   "permission.changed": "用户切换审批权限",
   "approval.review_started": "开始独立模型审批审查",
@@ -104,6 +107,9 @@ const fieldNames = [
   "usageComplete",
   "toolCount",
   "modelCalls",
+  "primaryModelCalls",
+  "childModelCalls",
+  "childId",
   "exitCode",
   "signal",
   "truncated",

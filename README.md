@@ -2,7 +2,6 @@
 
 [![Subagent CI](https://github.com/lsyhahaha/agent-desktop/actions/workflows/subagent-ci.yml/badge.svg?branch=feature%2Fsubagent)](https://github.com/lsyhahaha/agent-desktop/actions/workflows/subagent-ci.yml?query=branch%3Afeature%2Fsubagent)
 
-
 TypeScript + Electron + React 的本地 Coding Agent 项目。
 
 ## 运行
@@ -25,6 +24,8 @@ npm start
 `build` 生成 out/ 中的主进程、预加载、Runtime 和前端产物；当前不生成安装包或签名发行版。依赖以 package-lock.json 锁定，后续复现使用 npm ci。
 
 ## 已实现
+
+- 有界只读分析子Agent：最多3个并发，支持spawn/wait/cancel、父取消联动、真实模型时间线/用量和JSONL；无文件/Shell工具，新增调用会增加费用。边界与受控验收见[子Agent说明](docs/subagent-verification.md)。
 
 - DeepSeek Chat Completions 真实请求适配，默认 `deepseek-flash`、关闭思考模式，模型名可修改。
 - 本地SQLite保存会话、消息、逐轮工具审计和成功模型上下文，重启后可继续追问；保留流式、取消和失败轮次不进入后续上下文的规则。

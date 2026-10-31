@@ -37,6 +37,7 @@ Pino输出时间`time`（UTC ISO8601）、字符串`level`、固定中文`msg`�
 | run.started / run.state_changed | 运行开始及真实状态改变 |
 | loop.started / loop.continued | 当前迭代、历史规模、上下文字符量；工具结果回填后继续模型 |
 | model.started / model.completed / model.failed | 单次模型请求、观察耗时、文本字符数、调用数量或失败码 |
+| subagent.created / subagent.completed / subagent.cancel_requested | 子任务创建、终态与取消；childId关联父runId与对应模型itemId，不保存任务正文 |
 | model.usage | 仅Provider实际返回的输入/输出Token；缺失不估算，不当作完整账单 |
 | tool.requested / tool.validated / tool.started | 模型提出调用、参数校验通过、开始实际操作；审批前不冒充实际执行 |
 | interaction.requested / resolved / expired | 审批或提问及其允许/拒绝/回答/失效、等待耗时；不记正文 |
@@ -80,3 +81,5 @@ Task层与工具/进程层结果分开。耗时为实际观察区间，整轮包
 [尾部修复验收](evidence/runtime-jsonl-tail.json)覆盖完整行后残缺JSON的恢复及完整JSON缺换行的补齐，均在真实Electron启动链路和临时文件上验证。早期按Run文件的验收记录保留为历史，不代表当前文件布局。
 
 本机临时入口`/private/tmp/runtime-fixed-jsonl-acceptance.cjs`、`/private/tmp/runtime-tail-repair.cjs`。受控SSE替换模型网络，其余为真实产品链路；没有调用真实模型或写单元测试。未覆盖真实磁盘满/断电、全部滚动故障窗口、打包签名/asar、Windows/Linux或吞吐基准。日志不是业务审计账本，缺少一行不能据此断言操作未执行。
+
+子模型复用model.started/completed/failed/usage并携带childId；run终态modelCalls包含主/子请求，primaryModelCalls与childModelCalls分别列明。审批审查仍单独记录，不能把此计数当作全部API调用账单。详见[子Agent验收](subagent-verification.md)。

@@ -210,6 +210,27 @@ export class Agent {
     item.updatedAt = item.endedAt = Date.now();
     if (summary) item.summary = summary.slice(0, 1000);
   }
+  /** 主模型与子模型共用真实计量；缺失值只能标不完整，不估算Token。 */
+  private recordModelUsage(
+    item: Extract<TimelineItem, { type: "model" }>,
+    usage: { input: number; output: number } | null,
+    childId?: string,
+  ) {
+    if (!usage) {
+      this.snapshot.usage.complete = false;
+      return;
+    }
+    this.snapshot.usage.input += usage.input;
+    this.snapshot.usage.output += usage.output;
+    Object.assign(item.data, usage);
+    this.log.event("model.usage", {
+      itemId: item.id,
+      model: this.model,
+      inputTokens: usage.input,
+      outputTokens: usage.output,
+      ...(childId ? { childId } : {}),
+    });
+  }
   private startBudget() {
     this.budgetStarted = Date.now();
     this.budgetTimer = setTimeout(
@@ -622,6 +643,9 @@ export class Agent {
     controller: AbortController,
   ) {
     const children = new AgentControl<string>(3);
+    // 至多12次工具调用，结算Promise有界；终态提交前必须等全部子记录刷盘。
+    const childSettlements: Promise<void>[] = [];
+    let childModelCalls = 0;
     const executionItems = new Map<string, string>();
     let toolItemId: string | undefined;
     const signal = controller.signal,
@@ -741,17 +765,7 @@ export class Agent {
         });
         this.finish(model);
         if (output) this.finish(output);
-        if (result.usage) {
-          this.snapshot.usage.input += result.usage.input;
-          this.snapshot.usage.output += result.usage.output;
-          Object.assign(model.data, result.usage);
-          this.log.event("model.usage", {
-            itemId: model.id,
-            model: this.model,
-            inputTokens: result.usage.input,
-            outputTokens: result.usage.output,
-          });
-        } else this.snapshot.usage.complete = false;
+        this.recordModelUsage(model, result.usage);
         messages.push({
           role: "assistant",
           content: result.text || null,
@@ -794,26 +808,195 @@ export class Agent {
           let answer = "";
           try {
             const args: unknown = JSON.parse(call.function.arguments);
-            if (["spawn_agent", "wait_agent", "cancel_agent"].includes(call.function.name)) {
+            if (
+              ["spawn_agent", "wait_agent", "cancel_agent"].includes(
+                call.function.name,
+              )
+            ) {
               item = this.add("tool", "子Agent控制 · " + call.function.name, {
-                callId: call.id, name: call.function.name, kind: "control",
-                arguments: call.function.arguments, result: "",
+                callId: call.id,
+                name: call.function.name,
+                kind: "control",
+                arguments: call.function.arguments,
+                result: "",
               });
-              if (call.function.name === "spawn_agent") {
-                const input = SpawnAgentInput.parse(args);
-                const childId = children.spawn(this.snapshot.runId!, async (childSignal) => {
-                  const combined = AbortSignal.any([signal, childSignal]);
-                  const result = await modelStep(context.config, [
-                    { role: "system", content: "你是只读分析子Agent。仅根据提供的任务和已有知识进行分析；不能使用工具、读取文件或修改文件。不得声称已检查未提供的源码。输出简洁结论及不确定性。" },
-                    { role: "user", content: input.task },
-                  ], false, combined, () => {}, { noTools: true, maxTokens: 2048 });
-                  return result.text;
-                }, signal);
-                answer = JSON.stringify({ agent_id: childId, state: "running" });
+              const input =
+                call.function.name === "spawn_agent"
+                  ? SpawnAgentInput.parse(args)
+                  : ChildAgentInput.parse(args);
+              this.log.event("tool.validated", {
+                itemId: item.id,
+                tool: call.function.name,
+                toolCallId: call.id,
+              });
+              // 控制操作也先保存意图；该确认不授予子Agent任何工具权限。
+              await this.persist();
+              signal.throwIfAborted();
+              audit.startedAt = Date.now();
+              this.log.event("tool.started", {
+                itemId: item.id,
+                tool: call.function.name,
+                toolCallId: call.id,
+                kind: "subagent",
+              });
+              if ("task" in input) {
+                const childModel = this.add("model", "子Agent模型 · 待启动", {
+                  model: this.model,
+                  attempt: 1,
+                });
+                childModel.status = "pending";
+                let childId: string;
+                try {
+                  childId = children.spawn(
+                    this.snapshot.runId!,
+                    async (childSignal) => {
+                      const combined = AbortSignal.any([signal, childSignal]);
+                      let started = false,
+                        received = false,
+                        modelAt = 0;
+                      try {
+                        // spawn只创建内存句柄；子身份、模型条目和完整工具意图确认落盘后才发请求。
+                        await this.persist();
+                        combined.throwIfAborted();
+                        childModel.status = "running";
+                        childModel.updatedAt = Date.now();
+                        modelAt = Date.now();
+                        started = true;
+                        childModelCalls++;
+                        this.log.event("model.started", {
+                          childId,
+                          itemId: childModel.id,
+                          toolCallId: call.id,
+                          model: this.model,
+                          attempt: 1,
+                        });
+                        this.publish();
+                        const result = await modelStep(
+                          context.config,
+                          [
+                            {
+                              role: "system",
+                              content:
+                                "你是只读分析子Agent。仅根据提供的任务和已有知识进行分析；不能使用工具、读取文件或修改文件。不得声称已检查未提供的源码。输出简洁结论及不确定性。",
+                            },
+                            { role: "user", content: input.task },
+                          ],
+                          false,
+                          combined,
+                          () => {},
+                          { noTools: true, maxTokens: 2048 },
+                        );
+                        received = true;
+                        this.recordModelUsage(
+                          childModel,
+                          result.usage,
+                          childId,
+                        );
+                        combined.throwIfAborted();
+                        // 不发送工具定义不等于Provider一定返回文本；绝不把工具响应作为空成功。
+                        if (result.calls.length)
+                          throw new ModelError(
+                            "child_protocol",
+                            "子模型返回了不允许的工具调用",
+                          );
+                        this.log.event("model.completed", {
+                          childId,
+                          itemId: childModel.id,
+                          model: this.model,
+                          durationMs: Date.now() - modelAt,
+                          outputCharacters: result.text.length,
+                          toolCount: 0,
+                          usageComplete: !!result.usage,
+                        });
+                        return result.text;
+                      } catch (error) {
+                        if (started && !received)
+                          this.snapshot.usage.complete = false;
+                        if (started)
+                          this.log.event(
+                            "model.failed",
+                            {
+                              childId,
+                              itemId: childModel.id,
+                              model: this.model,
+                              durationMs: Date.now() - modelAt,
+                              code: combined.aborted
+                                ? "cancelled"
+                                : error instanceof ModelError
+                                  ? error.code
+                                  : "model_error",
+                            },
+                            "warn",
+                          );
+                        // 控制平面只接收固定错误，不把外部异常正文带入父上下文或持久化记录。
+                        throw new ModelError(
+                          error instanceof ModelError
+                            ? error.code
+                            : "child_failed",
+                          combined.aborted
+                            ? "子Agent已取消"
+                            : error instanceof ModelError
+                              ? error.message
+                              : "子Agent执行失败",
+                        );
+                      }
+                    },
+                    signal,
+                  );
+                } catch (error) {
+                  this.finish(childModel, "skipped", "子Agent未启动");
+                  throw error;
+                }
+                childModel.summary = `子Agent模型 · ${childId}`;
+                this.log.event("subagent.created", {
+                  childId,
+                  itemId: childModel.id,
+                  toolCallId: call.id,
+                  state: "pending",
+                });
+                // 连首次microtask前取消也在这里结算；不依赖模型回调必然被执行。
+                const settlement = children
+                  .wait(childId)
+                  .then(async (child) => {
+                    const status =
+                      child.state === "completed"
+                        ? "completed"
+                        : child.state === "failed"
+                          ? "failed"
+                          : "cancelled";
+                    this.finish(childModel, status);
+                    this.log.event(
+                      "subagent.completed",
+                      {
+                        childId,
+                        itemId: childModel.id,
+                        toolCallId: call.id,
+                        state: status,
+                        durationMs:
+                          (child.finishedAt ?? Date.now()) - child.startedAt,
+                      },
+                      status === "failed" ? "warn" : "info",
+                    );
+                    await this.persist();
+                    this.publish();
+                  })
+                  .catch(() => this.storageFailed());
+                childSettlements.push(settlement);
+                answer = JSON.stringify({
+                  agent_id: childId,
+                  state: "running",
+                });
               } else {
-                const input = ChildAgentInput.parse(args);
                 if (call.function.name === "cancel_agent") {
-                  answer = JSON.stringify({ agent_id: input.agent_id, cancellation_requested: children.cancel(input.agent_id) });
+                  const requested = children.cancel(input.agent_id);
+                  this.log.event("subagent.cancel_requested", {
+                    childId: input.agent_id,
+                    decision: requested,
+                  });
+                  answer = JSON.stringify({
+                    agent_id: input.agent_id,
+                    cancellation_requested: requested,
+                  });
                 } else {
                   const result = await children.wait(input.agent_id);
                   signal.throwIfAborted();
@@ -1240,6 +1423,7 @@ export class Agent {
       const cleanupAt = Date.now();
       this.log.event("cleanup.started");
       await children.close();
+      await Promise.all(childSettlements);
       await commands.dispose();
       this.log.event("cleanup.completed", {
         durationMs: Date.now() - cleanupAt,
@@ -1383,7 +1567,9 @@ export class Agent {
           state: this.snapshot.state,
           code: code ?? null,
           durationMs: Date.now() - this.createdAt,
-          modelCalls: this.modelCalls,
+          modelCalls: this.modelCalls + childModelCalls,
+          primaryModelCalls: this.modelCalls,
+          childModelCalls,
           toolCount: this.audits.size,
           usageComplete: this.snapshot.usage.complete,
         },
