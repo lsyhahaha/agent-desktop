@@ -166,3 +166,8 @@ UI历史恢复不等于执行恢复。中断Run、未知工具结果和已失效
 权限排障先检查会话 `permissionMode` 与当前轮 `runPermissionMode`，两者分别表示后续任务配置和该轮冻结配置。检查 JSONL 中 `permission.changed`、`run.created.permissionMode`、`approval.review_started/completed`，审查错误转人工不等于操作已执行。完整边界及受控验收见 [权限说明](docs/permissions.md)。
 
 删除审批排障先看 `command-approval-hook.ts` → Agent.authorize → `approval.hook_required` → Interaction。不能把强制人工审批改成独立模型代批，也不能把删除许可当成宿主提权；未知脚本等待人工属于保守策略。
+
+
+### 完整命令定位（2026-11-01）
+
+按用户要求，tool.requested现记录exec_command完整命令（至8000字符，敏感模式脱敏），其他文件调用记录路径、命令控制调用记录executionId。用runId和toolCallId关联启动/返回，不能把requested视为已执行。此例外不授权采集完整Prompt、源码、edit内容、stdin或PTY正文。历史命令可只读查SQLite工具审计，不追补改写旧日志。细节见docs/runtime-jsonl.md。

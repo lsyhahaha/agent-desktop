@@ -1,0 +1,10 @@
+{
+  "base": "/private/tmp/observability-acceptance-AYcYlZ",
+  "provider": "controlled SSE + credential substitute, temporary HOME; real Electron/Runtime/SQLite/commands",
+  "checks": [
+    "ten main-model requests exactly; ninth tool exploration followed by tenth summary-only response",
+    "7707-character command logged without truncation",
+    "known credential redacted and commandRedacted=true",
+    "no model requests beyond ten"
+  ]
+}

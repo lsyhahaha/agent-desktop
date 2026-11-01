@@ -39,7 +39,7 @@ Pino输出时间`time`（UTC ISO8601）、字符串`level`、固定中文`msg`�
 | model.started / model.completed / model.failed | 单次模型请求、观察耗时、文本字符数、调用数量或失败码 |
 | subagent.created / subagent.completed / subagent.cancel_requested | 子任务创建、终态与取消；childId关联父runId与对应模型itemId，不保存任务正文 |
 | model.usage | 仅Provider实际返回的输入/输出Token；缺失不估算，不当作完整账单 |
-| tool.requested / tool.validated / tool.started | 模型提出调用、参数校验通过、开始实际操作；审批前不冒充实际执行 |
+| tool.requested / tool.validated / tool.started | 模型提出调用、参数校验通过、开始实际操作；exec_command在requested记录完整command及workingDirectory，其他文件工具记录path，轮询/停止记录executionId；审批前不冒充实际执行 |
 | interaction.requested / resolved / expired | 审批或提问及其允许/拒绝/回答/失效、等待耗时；不记正文 |
 | plan.updated | Agent申报的计划修订和步骤数，不代表工具证据 |
 | file.read / proposed / applied / failed | 获准读取、提出修改、实际写入确认或失败/未知 |
@@ -55,7 +55,7 @@ Task层与工具/进程层结果分开。耗时为实际观察区间，整轮包
 
 ## 安全与资源策略
 
-- 白名单只接受固定事件与受控标量；默认不记录Prompt、用户输入/回答、源码、修改全文、工具参数/正文、stdout/stderr正文、环境或用户手动PTY内容。文件事件可含已校验的相对路径，路径和模型名仍可能含项目命名信息。
+- 白名单只接受固定事件与受控标量；默认不记录Prompt、用户输入/回答、源码、修改全文、工具参数全集、stdout/stderr正文、环境或用户手动PTY内容。按2026-11-01用户明确要求，exec_command的完整命令是例外：tool.requested.command保留最多8000字符（沿用工具输入上限），不受普通字符串512字符摘要限制；workingDirectory记录命令声明目录。命令若包含内联脚本、路径或业务文本，会进入本地日志，请按敏感业务记录管理。文件事件可含已校验的相对路径，路径和模型名仍可能含项目命名信息。
 - 已知当前Provider Key与常见令牌形式在采集端额外删除，Pino固定字段redact再做附加保护；不承诺正则能识别任意秘密。原始Error/stack不直接透传，错误用稳定code、阶段和关联ID定位。
 - 目录0700，文件0600；固定文件打开时拒绝链接/非普通文件/硬链接并校正权限，初次或重启以追加方式打开，滚动后独占创建。日志目录加入默认Agent路径保护；用户明确启用的完全访问/宿主操作具有真实宿主权限，不承诺该边界下继续隔离日志；人类本机终端的权限不改变。
 - Pino destination使用异步文件输出，无额外日志worker线程/transport。启动/滚动期间缓冲最多128条且64KiB，destination配置maxLength=65536（按库计量）。仅关键边界记录，不逐token或逐stdout chunk落盘。
@@ -83,3 +83,12 @@ Task层与工具/进程层结果分开。耗时为实际观察区间，整轮包
 本机临时入口`/private/tmp/runtime-fixed-jsonl-acceptance.cjs`、`/private/tmp/runtime-tail-repair.cjs`。受控SSE替换模型网络，其余为真实产品链路；没有调用真实模型或写单元测试。未覆盖真实磁盘满/断电、全部滚动故障窗口、打包签名/asar、Windows/Linux或吞吐基准。日志不是业务审计账本，缺少一行不能据此断言操作未执行。
 
 子模型复用model.started/completed/failed/usage并携带childId；run终态modelCalls包含主/子请求，primaryModelCalls与childModelCalls分别列明。审批审查仍单独记录，不能把此计数当作全部API调用账单。详见[子Agent验收](subagent-verification.md)。
+
+
+## 完整命令与六轮收尾修正（2026-11-01）
+
+- commandLength记录输入命令字符数；commandRedacted表明是否发生已知凭据/常见令牌脱敏，commandOmitted表明是否因输入超过8000字符或脱敏展开超过32768字符而显式省略，不静默截断命令。脱敏不保证识别任意秘密；完整原始参数仍在普通本地业务审计，不将其复制到JSONL。
+- tool.requested按toolCallId关联随后校验、授权、实际启动及结果。审批被拒绝的命令也有requested记录，但没有实际启动；write_stdin不将stdin正文复制进日志，edit_file不将文件内容复制进日志。
+- 新格式只适用于重启后的新调用，不追补历史日志；既有SQLite工具审计保留此前完整命令。权限、轮转、内存预算及日志降级规则不变。
+- 当前10轮为主模型请求总预算（2026-11-01按用户要求从6轮调整），工具最多12次；最后一轮（或工具预算已耗尽后的下一轮）禁用工具并请求有范围的总结。模型仍返回工具调用时拒绝执行并报summary_protocol；超时、取消和存储失败不伪装成正常收尾。收尾意味着本轮结束，不代表用户任务全部完成，也不会自动追加付费请求。
+- 受控验收见[evidence/observability-budget-command.json](evidence/observability-budget-command.json)：旧实现六轮复现step_limit，修正后保留总结，7707字符命令完整落盘，已知假Key脱敏。真实模型探索质量未复测。

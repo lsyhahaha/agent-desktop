@@ -186,6 +186,7 @@ export class CommandRunner {
       signal: string | null;
       bytes: number;
       truncated: boolean;
+      cwd?: string;
     }) => void = () => {},
     private fullAccess = false,
   ) {}
@@ -334,6 +335,7 @@ export class CommandRunner {
       child.once("spawn", () =>
         this.observed({
           phase: "started",
+          cwd: location.canonical,
           executionId: id,
           state: "running",
           exitCode: null,

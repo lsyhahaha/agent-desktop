@@ -1,0 +1,17 @@
+{
+  "directory": "/private/var/folders/lz/vl8wmj8n1m5_80s8fyg94bvw0000gn/T/agent-strategy-lab-fRD3EG",
+  "provenance": "controlled Provider and fake credentials. controlled report from test environment; live opt-in branch exercised under fake Provider; not an actual live report, candidate quality, or promotion",
+  "checks": [
+    "full CLI baseline/candidate six-case loop completed using real Runtime and tools",
+    "all 12 fixture workspaces unchanged and labelled evidence visible",
+    "12 explicit approval prompts exercised without bypass",
+    "final report and human-review summary written; no winner selected",
+    "evaluation report persisted in isolated lab SQLite"
+  ],
+  "promoted": false,
+  "runtimeDigest": "b423e1a34740aa7f3e6eff76f6a78ccda6f3da542a3f13963adb4f6c0edf7fe0",
+  "suiteId": "change-overview-v1",
+  "suiteDigest": "1303f874f103acf3cb5cf7c07d9d042a66d19ec728502c4dcdcc1bc5e72a0dd1",
+  "candidateId": "evidence-first-v1",
+  "candidateDigest": "071783795dd4e36fc70ce96b398546e73c4c582139602bf4b83f19b0b1334bd0"
+}

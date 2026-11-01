@@ -3,13 +3,18 @@ import { PermissionMode } from "./permissions";
 export * from "./permissions";
 import { TerminalCommand, TerminalSnapshot, TerminalProfile } from "./terminal";
 export * from "./terminal";
-import { Timeline } from "./timeline";
+import { AcceptanceEdit, Timeline } from "./timeline";
 export * from "./timeline";
 // 构建时对Main/preload/Runtime注入同一标识；数据库格式版本独立维护，不跟随构建改变。
 declare const __APP_BUILD_ID__: string;
+declare const __APP_RUNTIME_DIGEST__: string;
+export const RUNTIME_DIGEST =
+  typeof __APP_RUNTIME_DIGEST__ === "string"
+    ? __APP_RUNTIME_DIGEST__
+    : "unbundled-source";
 export const BUILD_ID =
   typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 10;
 const buildIdentity = {
   protocolVersion: z.literal(PROTOCOL_VERSION),
   buildId: z.literal(BUILD_ID),
@@ -128,6 +133,7 @@ export const SaveSettings = z
   })
   .strict();
 export const ChatCommand = z.discriminatedUnion("type", [
+  AcceptanceEdit.extend({ type: z.literal("edit_acceptance") }).strict(),
   z
     .object({
       type: z.literal("set_permission"),
@@ -216,7 +222,7 @@ export const ChatSnapshot = z
       "interrupted",
     ]),
     items: Timeline,
-    timelineVersion: z.literal(1).nullable(),
+    timelineVersion: z.union([z.literal(1), z.literal(2)]).nullable(),
     stopping: z.boolean(),
     messages: z
       .array(
@@ -306,7 +312,7 @@ export const RunSummary = z
     toolCount: z.number().int().min(0).max(12),
     permissionMode: PermissionMode,
     createdAt: z.number(),
-    timelineVersion: z.literal(1).nullable(),
+    timelineVersion: z.union([z.literal(1), z.literal(2)]).nullable(),
   })
   .strict();
 export type RunSummary = z.infer<typeof RunSummary>;
@@ -316,7 +322,7 @@ export const RunInspection = z
     permissionMode: PermissionMode,
     tools: ChatSnapshot.shape.tools,
     items: Timeline,
-    timelineVersion: z.literal(1).nullable(),
+    timelineVersion: z.union([z.literal(1), z.literal(2)]).nullable(),
   })
   .strict();
 
@@ -353,6 +359,12 @@ export const SessionSnapshot = z
   .strict();
 export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 
+export const ReadingStrategyId = z.enum([
+  "baseline-v1",
+  "evidence-first-v1",
+  "module-batch-v1",
+]);
+export type ReadingStrategyId = z.infer<typeof ReadingStrategyId>;
 export const RuntimeContext = z
   .object({
     config: z
@@ -362,6 +374,8 @@ export const RuntimeContext = z
       })
       .strict(),
     root: z.string().nullable(),
+    readingStrategyId: ReadingStrategyId.optional(),
+    evaluationOnly: z.boolean().optional(),
   })
   .strict();
 export const RuntimeRequest = z.discriminatedUnion("type", [
@@ -426,3 +440,4 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
+export * from "./observability";

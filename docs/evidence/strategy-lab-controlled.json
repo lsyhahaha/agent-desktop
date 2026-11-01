@@ -1,0 +1,12 @@
+{
+  "base": "/private/tmp/strategy-acceptance-n764eV",
+  "environment": "real Electron/Runtime/SQLite, controlled Provider, synthetic positive-control report only; no real evaluation or winner",
+  "checks": [
+    "受控真实Runtime冻结候选ID/摘要，权限固定ask，模型工具声明受限",
+    "异常Provider请求edit或提权exec在执行端拒绝，无副作用",
+    "证据可见指标来自成功工具输出，缺少内容不伪造覆盖",
+    "受控评估报告幂等落库，但禁止据此启用正式候选",
+    "不完整、运行版本不符、工作区变化、快照不一致均拒绝启用",
+    "隔离正向控制验证人工选择、重开恢复与基线回退；未选择正式项目候选"
+  ]
+}

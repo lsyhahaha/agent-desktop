@@ -1547,3 +1547,82 @@ textarea {
   color: var(--text-muted, #68757a);
   line-height: 1.5;
 }
+
+
+/* 观测详情复用聊天布局；长路径/命令仅在自己的区域换行或滚动，不撑开窗口。 */
+.observation-fields {
+  display: grid;
+  grid-template-columns: minmax(80px, 110px) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 12px 0;
+}
+.observation-fields dt {
+  color: var(--text-secondary, #737b80);
+}
+.observation-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.observation-fields pre {
+  margin: 0;
+}
+.acceptance-panel,
+.run-metrics {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border, #8a919655);
+  border-radius: 10px;
+  min-width: 0;
+}
+.acceptance-panel h4 {
+  margin: 0 0 8px;
+}
+.acceptance-condition {
+  margin: 12px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border, #8a919655);
+  overflow-wrap: anywhere;
+}
+.acceptance-panel label {
+  display: block;
+  margin-top: 8px;
+}
+.acceptance-panel textarea,
+.acceptance-panel select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  color: inherit;
+  background: var(--surface, transparent);
+  border: 1px solid var(--border, #8a919677);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+.acceptance-panel textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.acceptance-panel button {
+  margin: 4px 6px 4px 0;
+}
+.acceptance-panel pre {
+  max-height: 260px;
+  overflow: auto;
+}
+.run-status {
+  max-width: min(52vw, 620px);
+  overflow-wrap: anywhere;
+}
+.timeline-item:focus {
+  outline: 2px solid #6a86a5;
+  outline-offset: 3px;
+}
+/* 分组不重复施加浏览器默认列表缩进；子分析独立留出层级。 */
+.timeline-group { list-style: none; }
+.timeline-group > ol, .timeline-group > details > ol { list-style: none; margin: 0; padding: 0; }
+.timeline-group > section { margin-left: 16px; }
+.timeline-group > section > ol { list-style: none; padding-left: 12px; }
+.timeline-group > details > summary { cursor: pointer; padding: 6px 0; }

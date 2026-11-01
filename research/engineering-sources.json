@@ -1,0 +1,157 @@
+{
+  "checked_on": "2026-11-01",
+  "scope": "Public engineering examples; no dependencies installed, no external code executed, no production systems accessed",
+  "repositories": [
+    {
+      "repository": "gepa-ai/gepa",
+      "commit": "8c7b697a71977980afc7537dac0881e784eef99f",
+      "inspection": "official source read statically; not executed",
+      "files": [
+        {
+          "path": "src/gepa/api.py",
+          "url": "https://github.com/gepa-ai/gepa/blob/8c7b697a71977980afc7537dac0881e784eef99f/src/gepa/api.py"
+        },
+        {
+          "path": "src/gepa/core/adapter.py",
+          "url": "https://github.com/gepa-ai/gepa/blob/8c7b697a71977980afc7537dac0881e784eef99f/src/gepa/core/adapter.py",
+          "git_blob_sha": "02fbf542cafdfeddd3f0ce299fd61d63f09465e6"
+        },
+        {
+          "path": "src/gepa/core/engine.py",
+          "url": "https://github.com/gepa-ai/gepa/blob/8c7b697a71977980afc7537dac0881e784eef99f/src/gepa/core/engine.py",
+          "git_blob_sha": "cf25bf661fb59a8cb164da15e46a6557b0fea88b"
+        },
+        {
+          "path": "src/gepa/core/result.py",
+          "url": "https://github.com/gepa-ai/gepa/blob/8c7b697a71977980afc7537dac0881e784eef99f/src/gepa/core/result.py",
+          "git_blob_sha": "bc3f7ff38607d6ce4e47aabea8db844e8df62bdf"
+        },
+        {
+          "path": "src/gepa/proposer/reflective_mutation/reflective_mutation.py",
+          "url": "https://github.com/gepa-ai/gepa/blob/8c7b697a71977980afc7537dac0881e784eef99f/src/gepa/proposer/reflective_mutation/reflective_mutation.py",
+          "git_blob_sha": "0c6f94e8f77f9732998acfc7f73020863d43c42f"
+        }
+      ]
+    },
+    {
+      "repository": "stanfordnlp/dspy",
+      "commit": "25162c4fc05c2d2d019b0ffb5b6b2a9f315ec007",
+      "inspection": "official source read statically; not executed",
+      "files": [
+        {
+          "path": "dspy/teleprompt/gepa/gepa.py",
+          "url": "https://github.com/stanfordnlp/dspy/blob/25162c4fc05c2d2d019b0ffb5b6b2a9f315ec007/dspy/teleprompt/gepa/gepa.py",
+          "git_blob_sha": "c202c0c9d42af7f346acedc2f0bf580441e36514"
+        }
+      ]
+    },
+    {
+      "repository": "mlflow/mlflow",
+      "commit": "f5defbabd26a613e12cd15f24c4da42529b9601e",
+      "inspection": "official source read statically; not executed",
+      "files": [
+        {
+          "path": "mlflow/genai/optimize/optimizers/gepa_optimizer.py",
+          "url": "https://github.com/mlflow/mlflow/blob/f5defbabd26a613e12cd15f24c4da42529b9601e/mlflow/genai/optimize/optimizers/gepa_optimizer.py",
+          "git_blob_sha": "04ff13534c3b1184f3a749343e7080f00926450f"
+        }
+      ]
+    },
+    {
+      "repository": "MaximeRobeyns/self_improving_coding_agent",
+      "commit": "ed8275dca4d3c5dbf77229964351fe9b424797dc",
+      "inspection": "official source read statically; not executed",
+      "files": [
+        {
+          "path": "runner.py",
+          "url": "https://github.com/MaximeRobeyns/self_improving_coding_agent/blob/ed8275dca4d3c5dbf77229964351fe9b424797dc/runner.py",
+          "git_blob_sha": "0e4c702e2ab66605d986a5a3eaef99421ede8da4"
+        }
+      ]
+    },
+    {
+      "repository": "jennyzzt/dgm",
+      "commit": "a565fd2d1dca504ef5104a7cc0f3bdc4ab9b4fd2",
+      "inspection": "official source read statically; not executed",
+      "files": [
+        {
+          "path": "DGM_outer.py",
+          "url": "https://github.com/jennyzzt/dgm/blob/a565fd2d1dca504ef5104a7cc0f3bdc4ab9b4fd2/DGM_outer.py",
+          "git_blob_sha": "2c87f4bdc303d0ab3c4ad2333b03ecf0a74392be"
+        }
+      ]
+    },
+    {
+      "repository": "ANative-Lab/EvoAgentX",
+      "commit": "e3df900662443e94dd92141be5633b040a69a70a",
+      "inspection": "official source read statically by research subagent; not executed",
+      "files": [
+        {
+          "path": "evoagentx/optimizers/textgrad_optimizer.py",
+          "url": "https://github.com/ANative-Lab/EvoAgentX/blob/e3df900662443e94dd92141be5633b040a69a70a/evoagentx/optimizers/textgrad_optimizer.py"
+        },
+        {
+          "path": "evoagentx/optimizers/aflow_optimizer.py",
+          "url": "https://github.com/ANative-Lab/EvoAgentX/blob/e3df900662443e94dd92141be5633b040a69a70a/evoagentx/optimizers/aflow_optimizer.py"
+        },
+        {
+          "path": "docs/tutorial/aflow_optimizer.md",
+          "url": "https://github.com/ANative-Lab/EvoAgentX/blob/e3df900662443e94dd92141be5633b040a69a70a/docs/tutorial/aflow_optimizer.md"
+        }
+      ]
+    },
+    {
+      "repository": "microsoft/RD-Agent",
+      "commit": "484776c211e4fbbeef03e0ec00d6bbee7362a4f4",
+      "inspection": "official source read statically by research subagent; not executed",
+      "files": [
+        {
+          "path": "rdagent/components/workflow/rd_loop.py",
+          "url": "https://github.com/microsoft/RD-Agent/blob/484776c211e4fbbeef03e0ec00d6bbee7362a4f4/rdagent/components/workflow/rd_loop.py"
+        },
+        {
+          "path": "rdagent/app/qlib_rd_loop/quant.py",
+          "url": "https://github.com/microsoft/RD-Agent/blob/484776c211e4fbbeef03e0ec00d6bbee7362a4f4/rdagent/app/qlib_rd_loop/quant.py"
+        },
+        {
+          "path": "rdagent/utils/workflow/loop.py",
+          "url": "https://github.com/microsoft/RD-Agent/blob/484776c211e4fbbeef03e0ec00d6bbee7362a4f4/rdagent/utils/workflow/loop.py"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/microsoft/RD-Agent/blob/484776c211e4fbbeef03e0ec00d6bbee7362a4f4/README.md"
+        }
+      ]
+    },
+    {
+      "repository": "MineDojo/Voyager",
+      "commit": "55e45a880755d0c8c66ca7fb5fe7962ac8974f89",
+      "inspection": "official source read statically by research subagent; not executed",
+      "files": [
+        {
+          "path": "voyager/voyager.py",
+          "url": "https://github.com/MineDojo/Voyager/blob/55e45a880755d0c8c66ca7fb5fe7962ac8974f89/voyager/voyager.py"
+        },
+        {
+          "path": "voyager/agents/skill.py",
+          "url": "https://github.com/MineDojo/Voyager/blob/55e45a880755d0c8c66ca7fb5fe7962ac8974f89/voyager/agents/skill.py"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/MineDojo/Voyager/blob/55e45a880755d0c8c66ca7fb5fe7962ac8974f89/README.md"
+        }
+      ]
+    }
+  ],
+  "product_sources": [
+    {
+      "url": "https://mlflow.org/docs/latest/genai/prompt-registry/optimize-prompts",
+      "evidence": "official integration and usage documentation; not proof of customer production outcomes"
+    },
+    {
+      "url": "https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization",
+      "published_on": "2025-09-24",
+      "evidence": "vendor-authored benchmark and product-context report; numerical claims not independently reproduced"
+    }
+  ]
+}

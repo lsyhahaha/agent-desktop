@@ -44,6 +44,7 @@ export const FileChange = z
     before: z.string().max(32768),
     after: z.string().max(32768),
     baseHash: z.string().length(64),
+    workspaceRevision: z.number().int().nonnegative().optional(),
     targetHash: z.string().length(64),
     outcome: z.enum([
       "proposed",
@@ -55,7 +56,70 @@ export const FileChange = z
     ]),
   })
   .strict();
+/** 验收修订只保存有界业务说明；来源由Runtime决定，调用者不能自报人工验收。 */
+export const AcceptanceConditions = z
+  .array(
+    z
+      .object({
+        id: z.string().uuid(),
+        text: z.string().trim().min(1).max(500),
+      })
+      .strict(),
+  )
+  .max(12)
+  .refine((v) => new Set(v.map((c) => c.id)).size === v.length);
+export const AcceptanceData = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    revisions: z
+      .array(
+        z
+          .object({
+            revision: z.number().int().nonnegative(),
+            at: z.number(),
+            source: z.enum(["agent", "user"]),
+            conditions: AcceptanceConditions,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(24),
+    links: z
+      .array(
+        z
+          .object({
+            conditionId: z.string().uuid(),
+            conditionRevision: z.number().int().nonnegative(),
+            itemId: z.string().uuid(),
+            source: z.enum(["agent", "user"]),
+            explanation: z.string().trim().min(1).max(500),
+            at: z.number(),
+          })
+          .strict(),
+      )
+      .max(48),
+  })
+  .strict();
+export const AcceptanceEdit = z
+  .object({
+    sessionId: z.string().uuid(),
+    runId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative(),
+    conditions: AcceptanceConditions.optional(),
+    link: z
+      .object({
+        conditionId: z.string().uuid(),
+        itemId: z.string().uuid(),
+        explanation: z.string().trim().min(1).max(500),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 export const TimelineItem = z.discriminatedUnion("type", [
+  z
+    .object({ ...base, type: z.literal("acceptance"), data: AcceptanceData })
+    .strict(),
   z
     .object({
       ...base,
@@ -79,7 +143,14 @@ export const TimelineItem = z.discriminatedUnion("type", [
       data: z
         .object({
           model: z.string().max(100),
+          strategyId: z.string().max(80).optional(),
+          strategyDigest: z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .optional(),
           attempt: z.number().int(),
+          childId: z.string().uuid().optional(),
+          parentItemId: z.string().uuid().optional(),
           input: z.number().optional(),
           output: z.number().optional(),
         })
@@ -128,6 +199,23 @@ export const TimelineItem = z.discriminatedUnion("type", [
           exitCode: z.number().nullable().optional(),
           executionStatus: z.string().max(30).optional(),
           truncated: z.boolean().optional(),
+          requestedAt: z.number().optional(),
+          startedAt: z.number().optional(),
+          endedAt: z.number().optional(),
+          approvalStartedAt: z.number().optional(),
+          approvalEndedAt: z.number().optional(),
+          authorization: z
+            .enum(["workspace", "full", "review", "user", "denied"])
+            .optional(),
+          environment: z.enum(["workspace", "host"]).optional(),
+          cwd: z.string().max(4096).optional(),
+          workspaceRevision: z.number().int().nonnegative().optional(),
+          versionUnconfirmed: z.boolean().optional(),
+          signal: z.string().nullable().optional(),
+          failureStage: z
+            .enum(["validation", "approval", "execution"])
+            .optional(),
+          errorCode: z.string().max(100).optional(),
         })
         .strict(),
     })
@@ -173,6 +261,8 @@ export const TimelineItem = z.discriminatedUnion("type", [
           verificationFailed: z.number().int(),
           verificationUnknown: z.number().int(),
           result: z.string().max(1000),
+          workspaceRevision: z.number().int().nonnegative().optional(),
+          versionUnconfirmed: z.boolean().optional(),
         })
         .strict(),
     })

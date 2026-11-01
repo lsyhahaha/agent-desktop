@@ -183,6 +183,22 @@ export class Sessions {
       return this.snapshot();
     }
     if (current.agent.busy()) throw new Error("请先停止当前任务");
+    if (cmd.type === "edit_acceptance") {
+      if (cmd.sessionId !== current.meta.id) throw new Error("会话已变化");
+      await this.store.request({
+        op: "edit_acceptance",
+        sessionId: cmd.sessionId,
+        runId: cmd.runId,
+        expectedRevision: cmd.expectedRevision,
+        conditions: cmd.conditions,
+        link: cmd.link,
+      });
+      // 先事务提交，再重新读取权威投影；不复用结束Agent里已经封存的写队列。
+      await this.activate(current.meta);
+      this.inspected = await this.store.inspect(cmd.sessionId, cmd.runId);
+      this.publish();
+      return this.snapshot();
+    }
     if (cmd.type === "set_permission") {
       if (cmd.sessionId !== current.meta.id) throw new Error("会话已变化");
       const meta = {
@@ -289,7 +305,14 @@ export class Sessions {
         current.meta.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
       await current.agent.command(cmd, {
         ...context,
-        permissionMode: current.meta.permissionMode,
+        permissionMode: context.evaluationOnly
+          ? "ask"
+          : current.meta.permissionMode,
+        readingStrategyId:
+          context.readingStrategyId ??
+          (context.root
+            ? await this.store.selectedReadingStrategy(context.root)
+            : "baseline-v1"),
       });
       this.page = 0;
       await this.refresh();

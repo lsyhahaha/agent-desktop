@@ -12,8 +12,10 @@ const Saved = z
 export class Settings {
   private value = { model: "deepseek-flash", encryptedKey: "" };
   private saving = false;
+  /** 仅可信本机评估入口可指定读取目录；凭据仍只在Main解密，不传给renderer。 */
+  constructor(private readonly directory = app.getPath("userData")) {}
   private get path() {
-    return join(app.getPath("userData"), "deepseek-settings.json");
+    return join(this.directory, "deepseek-settings.json");
   }
   async load() {
     try {

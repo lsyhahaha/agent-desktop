@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { StrategyEvaluation } from "./strategy-evaluation";
+import { ReadingStrategyId } from "@protocol";
+import { EvolutionDraft } from "./evolution-record";
 import {
+  AcceptanceEdit,
   PermissionMode,
   ChatSnapshot,
   WorkspaceSelection,
@@ -75,7 +79,7 @@ export const RunCheckpoint = z
     createdAt: z.number(),
     revision: z.number().int().nonnegative(),
     items: ChatSnapshot.shape.items,
-    timelineVersion: z.literal(1).nullable(),
+    timelineVersion: z.union([z.literal(1), z.literal(2)]).nullable(),
     state: ChatSnapshot.shape.state,
     permissionMode: PermissionMode,
     messages: z.array(ChatSnapshot.shape.messages.element).length(2),
@@ -128,6 +132,47 @@ export const RecoveryResult = z
   })
   .strict();
 export const StorageRequest = z.discriminatedUnion("op", [
+  z
+    .object({
+      op: z.literal("strategy_evaluation_append"),
+      report: StrategyEvaluation,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("strategy_selected"),
+      projectPath: EvolutionDraft.shape.projectPath,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("strategy_select"),
+      projectPath: EvolutionDraft.shape.projectPath,
+      strategyId: ReadingStrategyId,
+      report: StrategyEvaluation.nullable(),
+      rationale: z.string().trim().min(1).max(2000),
+      humanReviewed: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({ op: z.literal("evolution_append"), record: EvolutionDraft })
+    .strict(),
+  z
+    .object({
+      op: z.literal("evolution_get"),
+      projectPath: EvolutionDraft.shape.projectPath,
+      id: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("evolution_page"),
+      projectPath: EvolutionDraft.shape.projectPath,
+      after: z.number().int().nonnegative(),
+      limit: z.number().int().min(1).max(20),
+    })
+    .strict(),
+  AcceptanceEdit.extend({ op: z.literal("edit_acceptance") }).strict(),
   z.object({ op: z.literal("recover") }).strict(),
   z.object({ op: z.literal("selected") }).strict(),
   z.object({ op: z.literal("draft") }).strict(),

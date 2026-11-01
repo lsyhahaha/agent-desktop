@@ -1,0 +1,2 @@
+# arXiv原文保持二进制，避免PDF头部无NUL时被Git误判为文本或参与文本合并。
+research/papers/*.pdf binary

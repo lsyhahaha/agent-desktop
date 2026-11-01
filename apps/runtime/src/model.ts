@@ -64,7 +64,11 @@ export async function modelStep(
   tools: boolean,
   signal: AbortSignal,
   onText: (text: string) => void,
-  options: { noTools?: boolean; maxTokens?: number } = {},
+  options: {
+    noTools?: boolean;
+    maxTokens?: number;
+    allowedToolNames?: readonly string[];
+  } = {},
 ): Promise<{
   text: string;
   calls: Call[];
@@ -93,7 +97,11 @@ export async function modelStep(
           ? {}
           : {
               tools: tools
-                ? toolDefinitions
+                ? toolDefinitions.filter(
+                    (tool) =>
+                      !options.allowedToolNames ||
+                      options.allowedToolNames.includes(tool.function.name),
+                  )
                 : toolDefinitions.filter((tool) =>
                     ["update_plan", "request_user_input"].includes(
                       tool.function.name,

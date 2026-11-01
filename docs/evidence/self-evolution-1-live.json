@@ -1,0 +1,99 @@
+{
+  "runId": "ea253e37-5ba2-49d1-b139-1242bffedaf5",
+  "provider": "real configured provider; no network fixture; encrypted credentials only in temporary userData",
+  "modelRequests": 5,
+  "toolCalls": 9,
+  "state": "completed",
+  "error": null,
+  "usage": {
+    "input": 81979,
+    "output": 1743,
+    "complete": true
+  },
+  "answer": "我先检查仓库的改动情况。\n\n\n\n\n\n\n\n## 当前未提交改动概览\n\n所有改动围绕一个主题：**Coding Agent 的可观测性（observability）**，连同预算与收尾修正。协议版本从 8 升到 9，时间线从 v1 升到 v2。没有已暂存内容，18 个文件修改（+880/-95），另有 13 个未跟踪新文件。\n\n### 主要行为变化\n\n**协议层**（`packages/protocol`）\n- 新增 `observability.ts`：提供 `verificationResult` / `verificationCommands` / `acceptanceResult` / `currentActivity` / `isEvidenceRecord`。只根据原始事实推导“通过/失败/未知”，轮询、停止调用不重复统计为一次验证命令。\n- `timeline.ts`：新增 `acceptance` 时间线条目类型（条件最多 12 条、修订版本最多 24 个、证据关联最多 48 条）、`AcceptanceEdit`；tool 时间线条目新增 `requestedAt`、`startedAt`、`endedAt`、`approvalStartedAt`、`approvalEndedAt`、`authorization`、`environment`、`cwd`、`workspaceRevision`、`versionUnconfirmed`、`signal`、`failureStage`、`errorCode`；model 时间线条目新增 `childId`、`parentItemId`。\n- `PROTOCOL_VERSION` 8→9，多处 `timelineVersion` 放宽为 1|2。\n\n**Runtime**（`apps/runtime/src`）\n- `agent.ts`（改动最大，+282）：主模型请求预算 6→10 次，工具仍限 12 次；最后一轮或工具已耗尽时禁用工具，只请求“有范围总结”，模型仍请求工具则报 `summary_protocol`；超出批次预算的调用逐条标记“未执行”，并返回配对结果；新增 `update_acceptance` / `link_evidence` 工具处理，工具结果回传 `evidence_item_id`；跟踪 `workspaceRevision` / `versionUnconfirmed`；exec 事件补 `startedAt/endedAt/cwd/signal`；系统提示词加入取证深度指导，并改写总结统计口径。\n- `storage-worker.ts`：新增 `edit_acceptance` 事务（仅允许在终态 Run 上编辑验收说明，不改执行事实，`expectedRevision` 做并发校验；用户来源写 `source: \"user\"`，并把 `timeline_version` 置 2）。\n- `sessions.ts` / `storage-types.ts` / `index.ts`：把 `edit_acceptance` 贯穿到 ChatCommand、StorageRequest 链路。\n- `tools.ts`：两个新工具的输入 schema，新增 `commandLogFields`（exec 记 command 与 workingDirectory，其他工具记 path，轮询或停止记 executionId）；`list_directory`/`read_file` 描述更克制。\n- `runtime-log.ts` + `docs/runtime-jsonl.md`：命令日志不再受 512 字符摘要限制，最多 8000 字符，脱敏展开超 32768 才显式省略；新增 `commandLength` / `commandRedacted` / `commandOmitted` / `workingDirectory` 字段——这是文档中明确标注的“日志隐私例外”。\n- `exec-command.ts`：观察到 started 时附带规范化 cwd。\n\n**桌面端**（`apps/desktop/renderer/src`）\n- 新文件 `Observability.tsx`：`ToolDetail`（展示授权来源、执行环境、耗时、审批等待、失败阶段）、`RunMetrics`（按轮统计用量/验证结果，并声明“不是完整账单或正确率”）、`AcceptancePanel`（可编辑验收条件、关联已有证据、跳转定位）、`ProgressClock`。\n- `ExecutionTimeline.tsx`：分组渲染（连续读取折叠、子 Agent 分析挂到父步骤、轮询/停止收进可展开审计）、按 `timelineVersion === 1 || 2` 分支、关闭时把执行事实与任务正确性分开陈述。\n- `App.tsx`：顶栏状态改为由 `currentActivity` 驱动，优先级依次为 连接异常 / 保存异常 / 停止中 / 等待回答或批准 / 当前活动；新增 `storageError` 状态。\n- `useAgentSession.ts`：把 `edit_acceptance` 纳入允许状态集；`style.css` +79 行配套样式。\n\n**文档**：`README.md`、`CONTEXT.md`、`DEBUG.md`、`DESIGN.md`、`docs/runtime-jsonl.md` 更新；新增 `docs/agent-observability-design.md`、`docs/agent-observability-verification.md` 及 `docs/evidence/` 下 10 个 json/png 证据文件。\n\n### 未检查范围\n- `style.css`、`CONTEXT.md`、`DEBUG.md`、`DESIGN.md` 只看文件统计，未读内容；`ExecutionTimeline.tsx` 的 diff 只读到末尾分组函数处（截断）。\n- `docs/evidence/*.json`、`*.png` 和两份新设计/验收文档未读，因此文档声称的受控验收结果我**未核实**。\n- 未运行类型检查、构建或任何测试；上面的行为描述来自 diff 与源码阅读，不代表已通过验证。\n\n如需我深入某一块（比如 `edit_acceptance` 的并发语义或预算收尾逻辑），或跑一次 typecheck 确认改动可编译，告诉我即可。",
+  "logDirectory": "/private/tmp/observability-live-3SdZZR/data/logs/agent-runtime",
+  "toolSequence": [
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git status --porcelain=v1 --untracked-files=all"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff --stat; echo \"---STAGED---\"; git diff --cached --stat"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff packages/protocol/src/timeline.ts packages/protocol/src/index.ts apps/runtime/src/storage-types.ts apps/runtime/src/runtime-log.ts docs/runtime-jsonl.md README.md"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff apps/runtime/src/agent.ts apps/runtime/src/tools.ts"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff apps/runtime/src/storage-worker.ts apps/runtime/src/sessions.ts apps/runtime/src/exec-command.ts"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff apps/desktop/renderer/src/App.tsx apps/desktop/renderer/src/useAgentSession.ts; git diff --stat apps/desktop/renderer/src/ExecutionTimeline.tsx apps/desktop/renderer/src/style.css"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "read_file",
+      "arguments": {
+        "path": "packages/protocol/src/observability.ts"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "exec_command",
+      "arguments": {
+        "command": "git diff apps/desktop/renderer/src/ExecutionTimeline.tsx | head -220"
+      },
+      "state": "success"
+    },
+    {
+      "tool": "read_file",
+      "arguments": {
+        "path": "apps/desktop/renderer/src/Observability.tsx"
+      },
+      "state": "success"
+    }
+  ],
+  "modelToolBatchSizes": [
+    2,
+    2,
+    3,
+    2,
+    0
+  ],
+  "checks": [
+    "five main requests; final fifth request returned answer without budget-forced summary",
+    "new protocol and renderer modules actually read successfully",
+    "multiple independent tools requested in same model response",
+    "staged/unstaged statistics and full untracked status requested",
+    "no paid follow-up evaluation requests"
+  ],
+  "coverageLimits": [
+    "execution timeline diff partial; CSS and some docs only file statistics",
+    "model answer has file ownership imprecision: timelineVersion branching belongs to App rather than ExecutionTimeline; ChatCommand index belongs to packages/protocol, not Runtime index",
+    "single changing-worktree observation, not repeated benchmark"
+  ]
+}

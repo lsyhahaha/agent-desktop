@@ -1,3 +1,10 @@
+import {
+  EvolutionRecord,
+  EvolutionPage,
+  type EvolutionDraft,
+} from "./evolution-record";
+import { ReadingStrategyId } from "@protocol";
+import type { StrategyEvaluation } from "./strategy-evaluation";
 import { Worker } from "node:worker_threads";
 import {
   RecoveryResult,
@@ -90,6 +97,49 @@ export class SessionStore {
         this.fail(new Error("无法连接本地存储Worker。"));
       }
     });
+  }
+  /** 可信维护入口复用唯一Worker；renderer与模型未获得写入进化历史的通道。 */
+  async appendEvolution(record: EvolutionDraft) {
+    return EvolutionRecord.parse(
+      await this.request({ op: "evolution_append", record }),
+    );
+  }
+  async getEvolution(projectPath: string, id: string) {
+    return EvolutionRecord.parse(
+      await this.request({ op: "evolution_get", projectPath, id }),
+    );
+  }
+  async evolutionPage(projectPath: string, after = 0, limit = 20) {
+    return EvolutionPage.parse(
+      await this.request({ op: "evolution_page", projectPath, after, limit }),
+    );
+  }
+  async appendStrategyEvaluation(report: StrategyEvaluation) {
+    return String(
+      await this.request({ op: "strategy_evaluation_append", report }),
+    );
+  }
+  async selectedReadingStrategy(projectPath: string) {
+    return ReadingStrategyId.parse(
+      await this.request({ op: "strategy_selected", projectPath }),
+    );
+  }
+  async selectReadingStrategy(
+    projectPath: string,
+    strategyId: import("@protocol").ReadingStrategyId,
+    report: StrategyEvaluation | null,
+    rationale: string,
+  ) {
+    return ReadingStrategyId.parse(
+      await this.request({
+        op: "strategy_select",
+        projectPath,
+        strategyId,
+        report,
+        rationale,
+        humanReviewed: true,
+      }),
+    );
   }
   async recover() {
     return RecoveryResult.parse(await this.request({ op: "recover" }));

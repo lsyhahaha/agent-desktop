@@ -135,6 +135,7 @@ export function useAgentSession() {
       "inspect_run",
       "list_sessions",
       "set_permission",
+      "edit_acceptance",
     ].includes(value.type);
     if (
       switching &&

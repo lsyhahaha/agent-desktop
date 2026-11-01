@@ -1,0 +1,14 @@
+{
+  "base": "/private/tmp/evolution-storage-uqlqblan",
+  "environment": "Electron45.1.0/macOS, real SQLite worker and maintenance CLI; isolated v4 database backup; no Provider/credentials",
+  "checks": [
+    "v4真实受控库迁移v5，原会话/运行/消息/工具/时间线行数保持",
+    "追加记录事务成功；相同内容重复导入幂等且跨进程重开保持同一ID",
+    "详情含改动、验证、对照指标、证据哈希和开发者陈述来源",
+    "摘要查询与游标过滤有效，不复制完整证据正文",
+    "跨项目读取拒绝",
+    "同key不同内容、路径逃逸、证据哈希不符均拒绝，不覆盖已有记录",
+    "真实SQLite触发器拒绝插入时无新增记录，不确认成功",
+    "落盘内容损坏导致摘要校验失败，不返回虚假成功"
+  ]
+}

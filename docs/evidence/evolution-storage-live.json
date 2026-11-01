@@ -1,0 +1,22 @@
+{
+  "database": "/Users/a1111/Library/Application Support/agent-desktop/storage/sessions.sqlite",
+  "backup": "/private/tmp/agent-desktop-evolution-backup-fn0xzpgt/sessions-before-import.sqlite",
+  "schemaVersion": 5,
+  "recordId": "18b623c1-4ce0-468c-ac68-dca9ad21e99e",
+  "key": "self-evolution-1",
+  "provenance": "developer_recorded",
+  "preservedRows": {
+    "sessions": 3,
+    "runs": 29,
+    "messages": 58,
+    "tool_calls": 57,
+    "timeline_items": 176
+  },
+  "fileMode": "0o600",
+  "checks": [
+    "official database append committed",
+    "cold CLI list returned stored record",
+    "stored content digest checked",
+    "all original session/run/message/tool/timeline row counts unchanged"
+  ]
+}

@@ -107,6 +107,8 @@ const fieldNames = [
   "usageComplete",
   "toolCount",
   "modelCalls",
+  "strategyId",
+  "strategyDigest",
   "primaryModelCalls",
   "childModelCalls",
   "childId",
@@ -121,6 +123,11 @@ const fieldNames = [
   "permissionMode",
   "digest",
   "reviewDecision",
+  "command",
+  "workingDirectory",
+  "commandRedacted",
+  "commandOmitted",
+  "commandLength",
 ] as const;
 type Field = (typeof fieldNames)[number];
 export type RuntimeLogFields = Partial<
@@ -310,7 +317,7 @@ export class RuntimeLogs {
       );
     });
   }
-  private clean(value: string, secrets: string[]) {
+  private clean(value: string, secrets: string[], maxLength = 512) {
     let result = value;
     for (const secret of secrets)
       if (secret) result = result.split(secret).join("[REDACTED]");
@@ -320,7 +327,7 @@ export class RuntimeLogs {
         /((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+/gi,
         "$1[REDACTED]",
       )
-      .slice(0, 512);
+      .slice(0, maxLength);
   }
   private enqueue(line: string) {
     const bytes = Buffer.byteLength(line);
@@ -446,8 +453,27 @@ export class RuntimeLogs {
           const safe: RuntimeLogFields = {};
           for (const [key, value] of Object.entries(fields)) {
             if (!allowed.has(key)) continue;
-            if (typeof value === "string")
-              safe[key as Field] = this.clean(value, secrets);
+            if (key === "command" && typeof value === "string") {
+              // 命令按工具输入上限完整保留，不沿用摘要512字符截断；脱敏扩张超限时显式省略。
+              safe.commandLength = value.length;
+              if (value.length > 8000) {
+                safe.commandOmitted = true;
+                continue;
+              }
+              const command = this.clean(value, secrets, Infinity);
+              safe.commandRedacted = command !== value;
+              if (command.length > 32768) {
+                safe.commandOmitted = true;
+                continue;
+              }
+              safe.command = command;
+              safe.commandOmitted = false;
+            } else if (typeof value === "string")
+              safe[key as Field] = this.clean(
+                value,
+                secrets,
+                key === "workingDirectory" ? 4096 : 512,
+              );
             else if (
               value === null ||
               typeof value === "boolean" ||

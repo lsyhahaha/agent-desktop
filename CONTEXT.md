@@ -44,3 +44,27 @@ _Avoid_：用Run代替整段聊天。
 
 **PermissionMode**：会话持久化的 `ask / auto_review / full_access`；每个Run接纳时冻结，新会话默认ask，运行中拒绝更改。
 **ApprovalReview**：独立无工具模型请求对具体参数的审查，不是执行工具、不永久提升会话权限。只有明确allow自动授权，其他结果转原有Interaction；详见docs/permissions.md。
+
+## 可观测性与验收证据（2026-11-01）
+
+**Acceptance condition（验收条件）**：本轮希望验证的要求，与计划分开；有稳定身份、修订及Agent/用户来源，不代表已经执行或人工确认。
+
+**Evidence link（证据关联）**：将本轮已有文件/读取/目录/原始命令记录关联到特定条件修订，保留关联来源及说明；执行结果由事实决定，关联本身不证明业务语义充分覆盖。
+
+**Workspace revision（本轮结构化修改版本）**：Runtime观察到的本轮结构化编辑序号，不是全仓快照；Shell及外部写入不能借此获得完整版本保证。旧条件修订、修改前证据和未确认范围必须保留。
+
+## 自进化过程（2026-11-01）
+
+用户将“分析真实任务轨迹 → 修改Agent Desktop → 验证 → 对照收益与缺口”的工程改进过程命名为**自进化**。当前由开发助手受控实施，不代表Runtime拥有自动修改、提交或部署自身代码的能力。第1轮记录见docs/self-evolution-1.md。
+
+## 自进化记录（2026-11-01）
+
+**Evolution record**：按规范项目路径归属、不可覆盖的开发者改进记录；包含触发任务、基线、改动、验证陈述、对照指标与证据摘要。与Run执行事实分开，固定标记developer_recorded，不由模型自证。保存在同一SQLite库的evolution_records表，不随会话清空删除；首轮已补录，维护入口见docs/evolution-storage.md。
+
+## 策略候选与固定评估
+
+**Reading strategy**：受信任构建内的有版本读取指引，仅影响取证建议，不拥有工具授权、预算或评价标准；Run接纳时冻结ID与摘要。
+
+**Strategy evaluation**：同一固定套件/项目快照下的基线与候选运行记录，区分live和controlled。证据片段可见、用量及状态一致只是机器门槛；答案正确仍需人工审阅。
+
+**Strategy selection**：操作人依据报告显式选择版本或回到基线的追加历史；受控报告不能用于启用。当前提供两个人工准备的候选，没有自动候选搜索或完整递归自改机制。见docs/strategy-lab.md。

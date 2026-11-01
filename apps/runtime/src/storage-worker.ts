@@ -1,3 +1,8 @@
+import { readingStrategy } from "./reading-strategy";
+import { checkEvaluation } from "./strategy-evaluation";
+import { EvolutionRecord } from "./evolution-record";
+import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -10,7 +15,13 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { ChatSnapshot, Timeline, type TimelineItem } from "@protocol";
+import {
+  isEvidenceRecord,
+  RUNTIME_DIGEST,
+  ChatSnapshot,
+  Timeline,
+  type TimelineItem,
+} from "@protocol";
 import { readVersion } from "./edit-file";
 import { protectRuntimeDirectory } from "./workspace-path";
 import {
@@ -66,7 +77,14 @@ if (version === 0)
   PRAGMA user_version=1;
 `),
   );
-else if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
+else if (
+  version !== 1 &&
+  version !== 2 &&
+  version !== 3 &&
+  version !== 4 &&
+  version !== 5 &&
+  version !== 6
+)
   throw new Error("Unsupported database schema version");
 // v1旧轮次保留空版本，不从工具摘要伪造完整执行历史。
 if (version === 0 || version === 1)
@@ -83,6 +101,25 @@ if (Number(version) <= 3)
     db.exec(
       `ALTER TABLE sessions ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'ask'; ALTER TABLE runs ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'ask'; PRAGMA user_version=4;`,
     ),
+  );
+// v5进化记录独立于Session/Run：清空会话不级联删除项目改进历史。
+if (Number(version) <= 4)
+  transaction(() =>
+    db.exec(`
+    CREATE TABLE evolution_records(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, project_path TEXT NOT NULL, evolution_key TEXT NOT NULL, created_at REAL NOT NULL, digest TEXT NOT NULL, data_json TEXT NOT NULL, UNIQUE(project_path,evolution_key)) STRICT;
+    CREATE INDEX evolution_project_seq ON evolution_records(project_path,seq);
+    PRAGMA user_version=5;
+  `),
+  );
+// v6策略启用历史只追加；候选指引来自当前受信任构建，不能从记录注入任意代码或权限。
+if (Number(version) <= 5)
+  transaction(() =>
+    db.exec(`
+ CREATE TABLE reading_strategy_selections(seq INTEGER PRIMARY KEY AUTOINCREMENT, project_path TEXT NOT NULL, strategy_id TEXT NOT NULL, strategy_digest TEXT NOT NULL, rationale TEXT NOT NULL, report_json TEXT, created_at REAL NOT NULL) STRICT;
+ CREATE INDEX strategy_project_seq ON reading_strategy_selections(project_path,seq);
+ CREATE TABLE reading_strategy_evaluations(id TEXT PRIMARY KEY, project_path TEXT NOT NULL, report_json TEXT NOT NULL, digest TEXT NOT NULL, created_at REAL NOT NULL) STRICT;
+ PRAGMA user_version=6;
+`),
   );
 // v3仅多了已停用的日志表；保留现有数据，不创建、不查询、不清空这些表。
 protectRuntimeDirectory(dirname(path));
@@ -370,6 +407,20 @@ function load(id: string) {
     })),
   });
 }
+/** 已存JSON仍重新验证；摘要校验可发现损坏，不把读取成功等同于效果已证实。 */
+function evolutionOf(row: Record<string, unknown>) {
+  const data = parse(row.data_json);
+  if (createHash("sha256").update(json(data)).digest("hex") !== row.digest)
+    throw new Error("Evolution record integrity failure");
+  return EvolutionRecord.parse({
+    id: row.id,
+    seq: row.seq,
+    createdAt: row.created_at,
+    provenance: "developer_recorded",
+    digest: row.digest,
+    data,
+  });
+}
 parentPort!.on("message", async (raw: unknown) => {
   let id: number | undefined;
   try {
@@ -384,6 +435,157 @@ parentPort!.on("message", async (raw: unknown) => {
     const request = parsed.request;
     let value: unknown;
     switch (request.op) {
+      case "strategy_evaluation_append": {
+        const body = json(request.report),
+          digest = createHash("sha256").update(body).digest("hex");
+        transaction(() => {
+          const previous = db
+            .prepare(
+              "SELECT digest FROM reading_strategy_evaluations WHERE id=?",
+            )
+            .get(request.report.id);
+          if (previous) {
+            if (previous.digest !== digest)
+              throw new RecordNotFound("Evaluation immutable");
+            return;
+          }
+          db.prepare(
+            "INSERT INTO reading_strategy_evaluations VALUES (?,?,?,?,?)",
+          ).run(
+            request.report.id,
+            request.report.projectPath,
+            body,
+            digest,
+            Date.now(),
+          );
+        });
+        value = request.report.id;
+        break;
+      }
+      case "strategy_selected": {
+        const row = db
+          .prepare(
+            "SELECT strategy_id,strategy_digest,report_json FROM reading_strategy_selections WHERE project_path=? ORDER BY seq DESC LIMIT 1",
+          )
+          .get(request.projectPath);
+        if (!row) {
+          value = "baseline-v1";
+          break;
+        }
+        const policy = readingStrategy(row.strategy_id);
+        if (
+          policy.digest !== row.strategy_digest ||
+          (policy.id !== "baseline-v1" &&
+            (!row.report_json ||
+              (parse(row.report_json) as { runtimeDigest?: string })
+                .runtimeDigest !== RUNTIME_DIGEST))
+        ) {
+          value = "baseline-v1";
+          break;
+        }
+        value = policy.id;
+        break;
+      }
+      case "strategy_select": {
+        const policy = readingStrategy(request.strategyId);
+        if (request.strategyId !== "baseline-v1") {
+          const report = request.report;
+          if (
+            !report ||
+            report.mode !== "live" ||
+            report.runtimeDigest !== RUNTIME_DIGEST ||
+            report.projectPath !== request.projectPath ||
+            report.candidateId !== policy.id ||
+            report.candidateDigest !== policy.digest ||
+            report.baselineDigest !== readingStrategy("baseline-v1").digest
+          )
+            throw new RecordNotFound("Live candidate evidence required");
+          try {
+            checkEvaluation(report);
+          } catch {
+            throw new RecordNotFound("Evaluation incomplete or failed");
+          }
+        }
+        transaction(() =>
+          db
+            .prepare(
+              "INSERT INTO reading_strategy_selections(project_path,strategy_id,strategy_digest,rationale,report_json,created_at) VALUES (?,?,?,?,?,?)",
+            )
+            .run(
+              request.projectPath,
+              policy.id,
+              policy.digest,
+              request.rationale,
+              request.report ? json(request.report) : null,
+              Date.now(),
+            ),
+        );
+        value = policy.id;
+        break;
+      }
+      case "evolution_append": {
+        value = transaction(() => {
+          const body = json(request.record),
+            digest = createHash("sha256").update(body).digest("hex");
+          const previous = db
+            .prepare(
+              "SELECT * FROM evolution_records WHERE project_path=? AND evolution_key=?",
+            )
+            .get(request.record.projectPath, request.record.key);
+          if (previous) {
+            if (previous.digest !== digest)
+              throw new RecordNotFound(
+                "Evolution key content conflict; create a new record",
+              );
+            return evolutionOf(previous);
+          }
+          const id = randomUUID(),
+            now = Date.now();
+          db.prepare(
+            "INSERT INTO evolution_records(id,project_path,evolution_key,created_at,digest,data_json) VALUES (?,?,?,?,?,?)",
+          ).run(
+            id,
+            request.record.projectPath,
+            request.record.key,
+            now,
+            digest,
+            body,
+          );
+          return evolutionOf(
+            db.prepare("SELECT * FROM evolution_records WHERE id=?").get(id)!,
+          );
+        });
+        break;
+      }
+      case "evolution_get": {
+        const row = db
+          .prepare(
+            "SELECT * FROM evolution_records WHERE project_path=? AND id=?",
+          )
+          .get(request.projectPath, request.id);
+        if (!row)
+          throw new RecordNotFound(
+            "Evolution record missing or not owned by project",
+          );
+        value = evolutionOf(row);
+        break;
+      }
+      case "evolution_page": {
+        const rows = db
+          .prepare(
+            "SELECT * FROM evolution_records WHERE project_path=? AND seq>? ORDER BY seq LIMIT ?",
+          )
+          .all(request.projectPath, request.after, request.limit + 1);
+        const records = rows.slice(0, request.limit).map((row) => {
+          const { data, ...record } = evolutionOf(row);
+          return { ...record, key: data.key, title: data.title };
+        });
+        value = {
+          records,
+          nextCursor: rows.length > request.limit ? records.at(-1)!.seq : null,
+        };
+        break;
+      }
       case "recover":
         value = await recover();
         break;
@@ -440,6 +642,110 @@ parentPort!.on("message", async (raw: unknown) => {
           })),
           hasMore: rows.length > 20,
         };
+        break;
+      }
+      // 唯一允许修改终态的操作仅编辑验收说明，不改执行事实、模型上下文或工具审计。
+      case "edit_acceptance": {
+        transaction(() => {
+          const run = db
+            .prepare("SELECT state FROM runs WHERE id=? AND session_id=?")
+            .get(request.runId, request.sessionId);
+          if (
+            !run ||
+            !["completed", "failed", "cancelled", "interrupted"].includes(
+              String(run.state),
+            )
+          )
+            throw new RecordNotFound("Run not editable");
+          const items = itemRows(request.runId);
+          let item = items.find(
+            (i): i is Extract<TimelineItem, { type: "acceptance" }> =>
+              i.type === "acceptance",
+          );
+          if (!request.conditions && !request.link)
+            throw new RecordNotFound("Empty edit");
+          if (!item) {
+            if (
+              request.expectedRevision !== 0 ||
+              !request.conditions ||
+              items.length >= 128
+            )
+              throw new RecordNotFound("Acceptance not editable");
+            const now = Date.now();
+            item = {
+              id: randomUUID(),
+              runId: request.runId,
+              seq: items.length + 1,
+              type: "acceptance",
+              status: "completed",
+              phase: "completed",
+              createdAt: now,
+              updatedAt: now,
+              endedAt: now,
+              summary: "验收条件与证据",
+              data: {
+                revision: 0,
+                revisions: [
+                  {
+                    revision: 0,
+                    at: now,
+                    source: "user",
+                    conditions: request.conditions,
+                  },
+                ],
+                links: [],
+              },
+            };
+            items.push(item);
+          } else {
+            if (
+              item.data.revision !== request.expectedRevision ||
+              (request.conditions !== undefined &&
+                item.data.revisions.length >= 24)
+            )
+              throw new RecordNotFound(
+                "Acceptance changed or revision limit reached",
+              );
+            if (request.conditions) {
+              const revision = ++item.data.revision;
+              item.data.revisions.push({
+                revision,
+                at: Date.now(),
+                source: "user",
+                conditions: request.conditions,
+              });
+            }
+          }
+          if (request.link) {
+            const target = items.find(
+              (i) => i.id === request.link!.itemId && i.runId === request.runId,
+            );
+            if (
+              !item.data.revisions
+                .at(-1)!
+                .conditions.some((c) => c.id === request.link!.conditionId) ||
+              !target ||
+              !isEvidenceRecord(target) ||
+              item.data.links.length >= 48
+            )
+              throw new RecordNotFound("Invalid evidence reference");
+            item.data.links.push({
+              ...request.link,
+              conditionRevision: item.data.revision,
+              source: "user",
+              at: Date.now(),
+            });
+          }
+          item.updatedAt = Date.now();
+          Timeline.parse(items);
+          db.prepare(
+            "INSERT INTO timeline_items VALUES (?,?,?,?) ON CONFLICT(run_id,item_id) DO UPDATE SET data_json=excluded.data_json",
+          ).run(request.runId, item.id, item.seq, json(item));
+          db.prepare(
+            "UPDATE runs SET timeline_version=2, revision=revision+1 WHERE id=?",
+          ).run(request.runId);
+        });
+        value = null;
         break;
       }
       case "inspect": {

@@ -1,0 +1,48 @@
+{
+  "database": "/Users/a1111/Library/Application Support/agent-desktop/storage/sessions.sqlite",
+  "backup": "/private/tmp/agent-desktop-before-v6-dmw559mr/sessions.sqlite",
+  "beforeVersion": 5,
+  "beforeCounts": {
+    "sessions": 3,
+    "runs": 30,
+    "messages": 60,
+    "tool_calls": 65,
+    "timeline_items": 194,
+    "evolution_records": 1
+  },
+  "afterVersion": 6,
+  "afterCounts": {
+    "sessions": 3,
+    "runs": 30,
+    "messages": 60,
+    "tool_calls": 65,
+    "timeline_items": 194,
+    "evolution_records": 2
+  },
+  "records": [
+    {
+      "id": "18b623c1-4ce0-468c-ac68-dca9ad21e99e",
+      "key": "self-evolution-1"
+    },
+    {
+      "id": "10d9eada-0f6d-4786-b56c-8e7429398696",
+      "key": "self-evolution-2-strategy-lab"
+    }
+  ],
+  "activeStrategy": "baseline-v1 (no override selected)",
+  "selectionRows": 0,
+  "evaluationRows": 0,
+  "fileMode": "0o600",
+  "checks": [
+    "v5 to v6 official migration committed",
+    "both evolution records readable with content digests verified",
+    "all pre-existing session/run/message/tool/timeline row counts unchanged",
+    "no strategy selected and no real evaluation executed",
+    "new app opened with restored history; startup recovery completed"
+  ],
+  "restartVerified": true,
+  "historyRestored": true,
+  "bootId": "388a5fd9-5345-45dc-813a-abb7c994e01e",
+  "buildId": "a8abe773-0f2d-4108-8994-3348d36fecc3",
+  "modelStartsAfterRestart": 0
+}

@@ -1,0 +1,69 @@
+{
+  "key": "self-evolution-1",
+  "projectPath": "/Users/a1111/Desktop/agent-desktop",
+  "title": "自进化第1轮：按任务目标取证，减少无效往返",
+  "occurredOn": "2026-11-01",
+  "trigger": "用户要求分析并优化“看看当前代码改了哪些什么？”的执行链路，并将改进过程命名为自进化。",
+  "baselineCommit": "d847ae8",
+  "changes": [
+    "区分改动概览与深入审查，先核对暂存、未暂存和新增文件；关键新增源码优先读取。",
+    "复用同轮多工具响应，鼓励独立取证批量提出；动态提示剩余轮数与工具预算，足够回答时主动收尾。",
+    "Runtime整批检查重复调用ID；超预算声明逐一标记未接纳、未执行并补齐工具结果配对。",
+    "前端分开显示已接纳工具调用及预算未接纳调用。"
+  ],
+  "validations": [
+    {
+      "kind": "build",
+      "result": "该轮npm run build（包含类型检查）和git diff --check通过。"
+    },
+    {
+      "kind": "controlled",
+      "result": "2项定向受控Electron验证及既有24项回归通过；临时Provider与凭据替身，不是单元测试或真实模型质量证明。"
+    },
+    {
+      "kind": "real",
+      "result": "用户单次授权后的真实DeepSeek只读验收：5轮主模型、9次工具；两个关键新增模块均实际读取，第5轮主动回答。"
+    }
+  ],
+  "comparison": {
+    "before": {
+      "runId": "a4a3eba2-3bbe-4173-84a4-f69289d2fdc5",
+      "modelRequests": 10,
+      "toolCalls": 10,
+      "inputTokens": 117640,
+      "outputTokens": 1719,
+      "usageComplete": true
+    },
+    "after": {
+      "runId": "ea253e37-5ba2-49d1-b139-1242bffedaf5",
+      "modelRequests": 5,
+      "toolCalls": 9,
+      "inputTokens": 81979,
+      "outputTokens": 1743,
+      "usageComplete": true
+    }
+  },
+  "limitations": [
+    "两次工作树有变化且每次仅一个样本，输入tokens下降约30.3%不代表稳定平均收益或因果归因。",
+    "真实回答仍有个别文件归属表述偏差；部分CSS、文档和时间线片段未深入读取，不能视为全面审查或任务正确率。",
+    "当前自进化由开发助手受控修改与验证，不代表Runtime可自动修改、提交或部署自身代码。"
+  ],
+  "evidence": [
+    {
+      "path": "docs/evidence/observability-live-10.json",
+      "sha256": "681f462a3ee45bb7996e961f4a8799efdabdf5d9fc776863e9486d34f7b739e8"
+    },
+    {
+      "path": "docs/evidence/self-evolution-1-live.json",
+      "sha256": "26e2a4717f711a20d3bdbe35b23d6d8174651b21aae1f2f63996c12522789272"
+    },
+    {
+      "path": "docs/evidence/self-evolution-1-comparison.json",
+      "sha256": "91247d07d6bd02ab95f3927b94133a5c4ff2c2657dee755e920f74ff63b1cb9b"
+    },
+    {
+      "path": "docs/evidence/self-evolution-1-controlled.json",
+      "sha256": "acccd090c29e232785c0efce049229dbc0da4e1c11a946a42b92b57e85e7e49c"
+    }
+  ]
+}

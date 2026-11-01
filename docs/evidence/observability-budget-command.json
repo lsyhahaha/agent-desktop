@@ -1,0 +1,11 @@
+{
+  "base": "/private/tmp/observability-acceptance-9IsM1b",
+  "provider": "controlled SSE + credential substitute, temporary HOME; real Electron/Runtime/SQLite/commands",
+  "checks": [
+    "baseline six-step failed with step_limit",
+    "after fix six-step completed with reserved summary",
+    "7707-character command logged without truncation",
+    "known credential redacted and commandRedacted=true",
+    "no added model requests beyond six"
+  ]
+}

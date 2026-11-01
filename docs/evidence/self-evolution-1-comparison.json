@@ -1,0 +1,22 @@
+{
+  "baseline": {
+    "modelRequests": 10,
+    "toolCalls": 10,
+    "usage": {
+      "input": 117640,
+      "output": 1719,
+      "complete": true
+    }
+  },
+  "after": {
+    "modelRequests": 5,
+    "toolCalls": 9,
+    "usage": {
+      "input": 81979,
+      "output": 1743,
+      "complete": true
+    }
+  },
+  "inputReductionPercent": 30.31,
+  "limits": "Single real run each, repository changed between runs; no causal/average latency or correctness-rate claim"
+}

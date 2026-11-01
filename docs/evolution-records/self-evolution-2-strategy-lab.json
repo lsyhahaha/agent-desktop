@@ -1,0 +1,54 @@
+{
+  "key": "self-evolution-2-strategy-lab",
+  "projectPath": "/Users/a1111/Desktop/agent-desktop",
+  "title": "自进化第2轮：读取策略候选与固定评估基础",
+  "occurredOn": "2026-11-02",
+  "trigger": "用户赞同受控策略自进化，并明确选择复用现有Runtime、准备两个策略候选、固定评估后人工选择。",
+  "baselineCommit": "d847ae8",
+  "changes": [
+    "将读取策略从系统模板拆出为当前基线与证据优先/模块批读两个构建内候选，Run冻结并记录ID/摘要。",
+    "提供6个固定合成Git案例、开发/保留切分、可复现快照及独立Runtime批次评估入口；准备不调用模型，真实调用需明确开关和批次预算。",
+    "评估限定读取工具与ask权限，拒绝修改工具/额外子模型/边界外提权；所需证据片段、状态、用量和副本未变作为机器门槛。",
+    "实验报告保存到独立实验SQLite；正式候选选择保存追加历史，需live完整报告、当前实现/策略摘要及人工审阅声明，支持回到基线。",
+    "数据库v5升级v6，复用单写者Worker；受控报告不能启用，未比较或启用任何正式候选。"
+  ],
+  "validations": [
+    {
+      "kind": "build",
+      "result": "npm run build（含类型检查）及git diff --check通过。"
+    },
+    {
+      "kind": "controlled",
+      "result": "真实Main/Runtime/工具/Git/SQLite全链路，在Provider/凭据替身下完成基线与候选各6任务和12次明确审批；报告controlled、没有winner。"
+    },
+    {
+      "kind": "controlled",
+      "result": "验证候选ID/摘要冻结与实际指引、越权调用拒绝、缺证据不伪造覆盖、报告幂等、无效报告拒绝选择、隔离人工合成正向选择/恢复/回退。"
+    },
+    {
+      "kind": "controlled",
+      "result": "不同临时目录固定快照一致、缺live参数拒绝、隔离v5到v6保留既有记录；既有24项可观测性回归通过。"
+    }
+  ],
+  "comparison": null,
+  "limitations": [
+    "未运行真实Provider候选评估，没有候选优于基线或业务泛化结论；全批次测试只验证机制，受控成本数据不是实际账单。",
+    "六项合成任务是起步集合，尚未覆盖真实大仓库、重命名、完整安全故障矩阵和跨平台；证据片段匹配不能证明答案事实正确，仍须人工审阅。",
+    "候选由开发者准备；本轮无GEPA、自动候选搜索、评估器自改、自动推广或完整递归自改。",
+    "选择当前走本机维护入口，需正常退出后操作；未增加在线策略管理页面。"
+  ],
+  "evidence": [
+    {
+      "path": "docs/evidence/strategy-lab-full-controlled.json",
+      "sha256": "31cfae7cf01fcb79872448fdf85fcb2888724540e39b5b8057ba95faba61010b"
+    },
+    {
+      "path": "docs/evidence/strategy-lab-controlled.json",
+      "sha256": "803cf557a0a064a082768e1c7ad07f8cb615ab701da847aaef9b922ad4080781"
+    },
+    {
+      "path": "docs/evidence/strategy-lab-prepare.json",
+      "sha256": "84a76e8a6dfdc43aa1b612e3d2ff261500bfcb71d83a39efbd1f831b692000cc"
+    }
+  ]
+}

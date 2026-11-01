@@ -1,0 +1,13 @@
+{
+  "plans": [
+    "/var/folders/lz/vl8wmj8n1m5_80s8fyg94bvw0000gn/T/agent-strategy-lab-P7ZS9R/plan.json",
+    "/var/folders/lz/vl8wmj8n1m5_80s8fyg94bvw0000gn/T/agent-strategy-lab-zIO63I/plan.json"
+  ],
+  "migrationDatabase": "/private/tmp/strategy-migration-wcb08il1/data/storage/sessions.sqlite",
+  "checks": [
+    "prepare-only creates six fixed Git cases and three strategy versions; no credentials or Provider use",
+    "different scratch directories produce identical per-case snapshot digests",
+    "missing explicit live authorization flags rejected before credentials",
+    "v5 to v6 isolated upgrade preserves all existing business/evolution row counts"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "base": "/private/tmp/observability-acceptance-0DUPa0",
+  "environment": "controlled Provider/credential fixture; real Electron/Runtime/SQLite/Renderer; temporary HOME/project",
+  "checks": [
+    "整批工具超预算：12次接纳、2次未执行、逐一返回配对结果后正常总结，无副作用",
+    "同批重复调用身份在任何工具执行前被拒绝"
+  ]
+}

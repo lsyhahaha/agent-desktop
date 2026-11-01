@@ -19,7 +19,9 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w node-pty -v 45.1.0",
-    "postinstall": "npm run rebuild:native"
+    "postinstall": "npm run rebuild:native",
+    "evolution": "electron out/main/evolution-admin.js",
+    "strategy:lab": "electron out/main/strategy-lab.js"
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.81",

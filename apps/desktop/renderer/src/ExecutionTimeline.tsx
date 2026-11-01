@@ -1,5 +1,12 @@
 import { memo, useState, type ReactNode } from "react";
 import type { ChatSnapshot, TimelineItem } from "@protocol";
+import {
+  AcceptancePanel,
+  ToolDetail,
+  RunMetrics,
+  ProgressClock,
+} from "./Observability";
+import type { ChatCommand } from "@protocol";
 import { MarkdownReply } from "./MarkdownReply";
 
 const states = {
@@ -13,6 +20,7 @@ const states = {
   unknown: "结果未确认",
 };
 const icons: Record<TimelineItem["type"], string> = {
+  acceptance: "M7 5h10M7 10h10M7 15h10M3 5h1M3 10h1M3 15h1",
   approval_review: "M10 2 17 5v5c0 4-7 8-7 8s-7-4-7-8V5z",
   model: "M4 4h12v12H4z M7 7h6v6H7z",
   message: "M3 4h14v10H7l-4 3z",
@@ -44,6 +52,8 @@ function Disclosure({
 }
 function Detail({ item }: { item: TimelineItem }) {
   switch (item.type) {
+    case "acceptance":
+      return null;
     case "approval_review":
       return (
         <>
@@ -68,6 +78,19 @@ function Detail({ item }: { item: TimelineItem }) {
       return (
         <p>
           {item.data.model} · 第{item.data.attempt}次请求
+          {item.data.strategyId && (
+            <span title={item.data.strategyDigest}>
+              {" "}
+              · 读取策略{" "}
+              {(
+                {
+                  "baseline-v1": "当前基线v1",
+                  "evidence-first-v1": "证据优先v1",
+                  "module-batch-v1": "模块批读v1",
+                } as Record<string, string>
+              )[item.data.strategyId] ?? item.data.strategyId}
+            </span>
+          )}
           {item.data.input !== undefined
             ? ` · 输入 ${item.data.input} / 输出 ${item.data.output} tokens`
             : ""}
@@ -123,19 +146,7 @@ function Detail({ item }: { item: TimelineItem }) {
         </>
       );
     case "tool":
-      return (
-        <Disclosure label="参数与执行结果">
-          <pre>{item.data.arguments}</pre>
-          {item.data.executionStatus && (
-            <p>
-              命令状态：{item.data.executionStatus} · 退出码{" "}
-              {item.data.exitCode ?? "—"}
-            </p>
-          )}
-          <pre>{(item.data.output ?? item.data.result) || "（暂无输出）"}</pre>
-          {item.data.truncated && <p>输出达到上限，已截断并终止命令。</p>}
-        </Disclosure>
-      );
+      return <ToolDetail item={item} />;
     case "interaction":
       return (
         <>
@@ -163,10 +174,13 @@ function Detail({ item }: { item: TimelineItem }) {
         <>
           <p>{item.data.result}</p>
           <p>
-            修改文件：
+            已确认结构化修改：
             {item.data.files.length
               ? item.data.files.join("、")
               : "无已确认修改"}
+          </p>
+          <p className="muted">
+            Shell及外部修改未全面核对；命令通过不代表任务目标达成。
           </p>
           <p>
             命令：{item.data.commands} ·{" "}
@@ -278,6 +292,8 @@ const Item = memo(function Item({
   const current = interaction?.itemId === item.id ? interaction : null;
   return (
     <li
+      id={`evidence-${item.id}`}
+      tabIndex={-1}
       className={`timeline-item ${item.status} type-${item.type}`}
       data-minimap-id={item.id}
       data-minimap-round={item.runId}
@@ -325,23 +341,145 @@ export function ExecutionTimeline({
   items,
   interaction,
   onReply,
+  sessionId,
+  runId,
+  editable = false,
+  onEdit,
+  tools,
 }: {
   items: TimelineItem[];
+  tools?: ChatSnapshot["tools"];
   interaction: ChatSnapshot["interaction"];
   onReply: (value: boolean | string) => Promise<boolean>;
+  sessionId?: string;
+  runId?: string;
+  editable?: boolean;
+  onEdit?: (command: ChatCommand) => Promise<boolean>;
 }) {
   return (
     <section className="execution-timeline" aria-label="Agent 执行时间线">
+      <ProgressClock items={items} />
       <ol>
-        {items.map((item) => (
-          <Item
-            key={item.id}
-            item={item}
-            interaction={interaction}
-            onReply={onReply}
-          />
-        ))}
+        {timelineGroups(items).map((group) => {
+          const item = group[0];
+          if (item.type === "model" && item.data.parentItemId) return null;
+          if (
+            item.type === "tool" &&
+            ["write_stdin", "stop_process"].includes(item.data.name) &&
+            item.data.executionId &&
+            items.some(
+              (i) =>
+                i.type === "tool" &&
+                i.data.name === "exec_command" &&
+                i.data.executionId === item.data.executionId,
+            )
+          )
+            return null;
+          const children = items.filter(
+            (i) => i.type === "model" && i.data.parentItemId === item.id,
+          );
+          const controls =
+            item.type === "tool" &&
+            item.data.name === "exec_command" &&
+            item.data.executionId
+              ? items.filter(
+                  (i) =>
+                    i.type === "tool" &&
+                    ["write_stdin", "stop_process"].includes(i.data.name) &&
+                    i.data.executionId === item.data.executionId,
+                )
+              : [];
+          return (
+            <li key={item.id} className="timeline-group">
+              {group.length > 1 ? (
+                <details>
+                  <summary>{group.length}次已完成读取</summary>
+                  <ol>
+                    {group.map((read) => (
+                      <Item
+                        key={read.id}
+                        item={read}
+                        interaction={null}
+                        onReply={onReply}
+                      />
+                    ))}
+                  </ol>
+                </details>
+              ) : (
+                <ol>
+                  <Item
+                    item={item}
+                    interaction={interaction}
+                    onReply={onReply}
+                  />
+                </ol>
+              )}
+              {!!children.length && (
+                <section aria-label="并行子分析">
+                  <small>属于以上步骤的子分析</small>
+                  <ol>
+                    {children.map((child) => (
+                      <Item
+                        key={child.id}
+                        item={child}
+                        interaction={null}
+                        onReply={onReply}
+                      />
+                    ))}
+                  </ol>
+                </section>
+              )}
+              {!!controls.length && (
+                <details>
+                  <summary>{controls.length}次轮询/停止调用审计</summary>
+                  <ol>
+                    {controls.map((control) => (
+                      <Item
+                        key={control.id}
+                        item={control}
+                        interaction={null}
+                        onReply={onReply}
+                      />
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </li>
+          );
+        })}
       </ol>
+      <RunMetrics items={items} audits={tools} />
+      <AcceptancePanel
+        key={`${runId}-${items.find((i) => i.type === "acceptance")?.updatedAt ?? 0}`}
+        items={items}
+        sessionId={sessionId}
+        runId={runId}
+        editable={editable}
+        onEdit={onEdit}
+      />
     </section>
   );
+}
+
+/** 只压缩连续读取；错误/审批/修改保持原位置，命令控制审计仍可展开。 */
+function timelineGroups(items: TimelineItem[]): TimelineItem[][] {
+  const groups: TimelineItem[][] = [];
+  for (const item of items) {
+    if (item.type === "acceptance") continue;
+    const previous = groups.at(-1);
+    if (
+      item.type === "tool" &&
+      item.data.name === "read_file" &&
+      item.status === "completed" &&
+      previous?.every(
+        (i) =>
+          i.type === "tool" &&
+          i.data.name === "read_file" &&
+          i.status === "completed",
+      )
+    )
+      previous.push(item);
+    else groups.push([item]);
+  }
+  return groups;
 }

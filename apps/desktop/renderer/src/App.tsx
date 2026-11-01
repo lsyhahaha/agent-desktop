@@ -5,6 +5,7 @@ import { MarkdownReply } from "./MarkdownReply";
 import { ConversationMinimap } from "./ConversationMinimap";
 import { Tooltip } from "./Tooltip";
 import { ThemePicker } from "./ThemePicker";
+import { currentActivity } from "@protocol";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { ToolRecords } from "./ToolRecords";
 import { ModelSettingsPage } from "./ModelSettingsPage";
@@ -569,14 +570,17 @@ export function App() {
               >
                 {agent.connectionError
                   ? "连接异常"
-                  : agent.chat?.stopping
-                    ? "正在停止…"
-                    : agent.chat?.state === "running" &&
-                        agent.chat?.tools.some(
-                          (tool) => tool.state === "running",
-                        )
-                      ? "工具执行中"
-                      : runLabels[agent.chat?.state ?? "idle"]}
+                  : agent.storageError
+                    ? "保存异常"
+                    : agent.chat?.stopping
+                      ? "正在停止，等待资源清理确认…"
+                      : agent.chat?.interaction
+                        ? agent.chat.interaction.kind === "input"
+                          ? "等待你的回答"
+                          : `等待批准 · ${agent.chat.interaction.path}`
+                        : agent.chat?.state === "running"
+                          ? currentActivity(agent.chat.items)
+                          : runLabels[agent.chat?.state ?? "idle"]}
               </span>
             </div>
           </header>
@@ -691,7 +695,8 @@ export function App() {
                                       本轮执行时间线
                                     </button>
                                   )}
-                                  {showTimeline && version === 1 ? (
+                                  {showTimeline &&
+                                  (version === 1 || version === 2) ? (
                                     <ExecutionTimeline
                                       items={
                                         current
@@ -703,6 +708,20 @@ export function App() {
                                           ? (agent.chat?.interaction ?? null)
                                           : null
                                       }
+                                      tools={
+                                        current
+                                          ? agent.chat!.tools
+                                          : (inspection?.tools ?? [])
+                                      }
+                                      sessionId={agent.sessionId ?? undefined}
+                                      runId={message.runId}
+                                      editable={
+                                        !agent.active &&
+                                        !agent.pending &&
+                                        !agent.storageError &&
+                                        !agent.connectionError
+                                      }
+                                      onEdit={agent.command}
                                       onReply={reply}
                                     />
                                   ) : (
@@ -717,21 +736,23 @@ export function App() {
                                       />
                                     </div>
                                   )}
-                                  {version !== 1 && (
+                                  {version !== 1 && version !== 2 && (
                                     <p className="muted">
                                       旧版记录，执行细节不完整
                                     </p>
                                   )}
-                                  {showTimeline && version !== 1 && (
-                                    <ToolRecords
-                                      tools={
-                                        current
-                                          ? agent.chat!.tools
-                                          : (inspection?.tools ?? [])
-                                      }
-                                      runId={message.runId}
-                                    />
-                                  )}
+                                  {showTimeline &&
+                                    version !== 1 &&
+                                    version !== 2 && (
+                                      <ToolRecords
+                                        tools={
+                                          current
+                                            ? agent.chat!.tools
+                                            : (inspection?.tools ?? [])
+                                        }
+                                        runId={message.runId}
+                                      />
+                                    )}
                                 </>
                               )}
                             </div>
