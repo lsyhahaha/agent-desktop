@@ -9,6 +9,7 @@ import { currentActivity } from "@protocol";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { ToolRecords } from "./ToolRecords";
 import { ModelSettingsPage } from "./ModelSettingsPage";
+import { PluginSettingsPage } from "./PluginSettingsPage";
 import { useAgentSession } from "./useAgentSession";
 
 /** 分组以本机自然日为界，跨月和夏令时仍按日期判断。 */
@@ -67,7 +68,7 @@ export function App() {
   }
   // 分隔线使用指针捕获，离开窗口或取消手势不会遗留全局监听。
 
-  const [page, setPage] = useState<"chat" | "settings">("chat");
+  const [page, setPage] = useState<"chat" | "settings" | "plugins">("chat");
   // 折叠仅影响窗口布局；保留侧栏节点和草稿，不改变会话或正在执行的运行。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const settingsMenu = useRef<HTMLDivElement>(null);
@@ -350,6 +351,17 @@ export function App() {
             >
               <span aria-hidden="true">◇</span> 模型设置
             </button>
+            <button
+              type="button"
+              className="settings-menu-item"
+              onClick={() => {
+                settingsMenu.current?.hidePopover();
+                setPage("plugins");
+                settingsTrigger.current?.focus();
+              }}
+            >
+              <span aria-hidden="true">⬡</span> 插件
+            </button>
           </div>
         </div>
         <ThemePicker />
@@ -361,14 +373,17 @@ export function App() {
         hidden={sidebarCollapsed}
       >
         <div className="window-drag sidebar-drag" />
-        {page === "settings" ? (
+        {page === "settings" || page === "plugins" ? (
           <>
             <button className="nav-item back" onClick={() => setPage("chat")}>
               <span>←</span> 返回工作区
             </button>
             <div className="group-label nav-label">基础设置</div>
-            <button className="nav-item selected" aria-current="page">
+            <button className={"nav-item " + (page === "settings" ? "selected" : "")} aria-current={page === "settings" ? "page" : undefined} onClick={() => setPage("settings")}>
               <span>◇</span> 模型设置
+            </button>
+            <button className={"nav-item " + (page === "plugins" ? "selected" : "")} aria-current={page === "plugins" ? "page" : undefined} onClick={() => setPage("plugins")}>
+              <span>⬡</span> 插件
             </button>
           </>
         ) : (
@@ -607,7 +622,7 @@ export function App() {
             <div className="window-drag header-drag" />
 
             <span>
-              {page === "settings" ? "设置" : empty ? "新任务" : currentTitle}
+              {page === "settings" ? "模型设置" : page === "plugins" ? "插件" : empty ? "新任务" : currentTitle}
             </span>
             <div className="header-actions">
               <button
@@ -633,7 +648,7 @@ export function App() {
                   <path d="m5 7 3 3-3 3m5 0h5" />
                 </svg>
               </button>
-              {agent.active && page === "settings" && (
+              {agent.active && page !== "chat" && (
                 <button className="stop-button" onClick={() => void stop()}>
                   ■ 停止任务
                 </button>
@@ -672,6 +687,8 @@ export function App() {
                 </div>
               )}
             </>
+          ) : page === "plugins" ? (
+            <PluginSettingsPage active={agent.active || agent.pending} />
           ) : (
             <div
               className={

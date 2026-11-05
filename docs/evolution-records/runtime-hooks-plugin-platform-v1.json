@@ -1,0 +1,42 @@
+{
+  "key": "runtime-hooks-plugin-platform-v1",
+  "projectPath": "/Users/a1111/Desktop/agent-desktop",
+  "title": "Runtime Hooks与受信任本地插件平台第一版",
+  "occurredOn": "2026-11-06",
+  "trigger": "用户要求实现Runtime通用Hooks/中间件与本地插件平台，覆盖Run、Model、Tool生命周期，并提供独立插件进程和完整管理界面。",
+  "baselineCommit": "cddb8f0694051918a1ec0cb71c8b141018af1b79",
+  "changes": [
+    "新增类型化HookPipeline和ToolDispatcher seam，按Run冻结插件顺序，区分观察与改写失败语义。",
+    "新增版本化插件manifest、阶段专用patch、MessagePort协议和Middleware时间线事实；插件不能获得Key、提升权限、注册工具或短路执行。",
+    "Main为每个启用插件监督独立Electron Utility Process，安装过程执行源目录与staging双扫描、摘要核对、入口探针和原子切换。",
+    "设置页新增本地插件安装、更新、启停、排序、状态和卸载，并明确受信任代码与非安全沙箱边界。",
+    "插件Hook降级、失败与超时回流Main并持久化停用；关闭先走cooperative shutdown，再TERM和有界SIGKILL升级。"
+  ],
+  "validations": [
+    {
+      "kind": "build",
+      "result": "npm run typecheck、npm run build及git diff --check通过；未新增依赖或单元测试。"
+    },
+    {
+      "kind": "controlled",
+      "result": "真实Electron45.1.0 Utility Process、Runtime、MessagePort、SQLite和临时插件验证探针、安装生命周期、symlink拒绝、观察Hook降级、改写Hook三秒超时、状态回流及日志脱敏；未调用Provider。"
+    },
+    {
+      "kind": "manual",
+      "result": "实际查看构建后的插件设置页：1320x860与1000x680深色、1000x680浅色；标题、信任警告、安装入口和空状态无溢出。renderer使用本地窄桥接替身，不冒充完整端到端。"
+    }
+  ],
+  "comparison": null,
+  "limitations": [
+    "未调用真实或受控Provider，因此未验证DeepSeek对model.before/model.after改写后的实际生成质量。",
+    "未覆盖Windows/Linux、恶意插件安全隔离、物理磁盘故障、长期压力和所有进程退出竞态。",
+    "本地插件由用户显式信任；独立Utility Process是故障隔离，不是抵抗恶意代码的安全沙箱。",
+    "正式SQLite自进化记录需用户正常退出当前Agent Desktop实例后再导入；本文件当前只是待导入草稿，不能替代落库。"
+  ],
+  "evidence": [
+    {
+      "path": "docs/evidence/runtime-hooks-controlled.json",
+      "sha256": "71c0a5b99395459c227cb7349e3c0412549cb1c9e9723156ad0e809123b8ede4"
+    }
+  ]
+}

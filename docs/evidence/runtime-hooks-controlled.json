@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-06",
+  "scope": "Runtime Hooks / trusted local plugin v1 controlled acceptance",
+  "environment": {
+    "electron": "45.1.0",
+    "platform": "macOS",
+    "provider": "not called",
+    "userData": "temporary isolated directories",
+    "workspace": "temporary non-sensitive files"
+  },
+  "checks": [
+    {
+      "name": "plugin-host-message-port",
+      "result": "passed",
+      "detail": "A real Electron Utility Process loaded a built ESM plugin, completed the probe handshake, and returned a schema-valid run.before patch over MessagePort."
+    },
+    {
+      "name": "manager-lifecycle",
+      "result": "passed",
+      "detail": "PluginManager installed, probed, enabled, disabled and removed a temporary plugin; the copied package was not installed through npm and no lifecycle scripts ran."
+    },
+    {
+      "name": "install-symlink-rejection",
+      "result": "passed",
+      "detail": "A plugin directory containing a symlink was rejected before installation. Source and staging copies are both scanned and digest-compared."
+    },
+    {
+      "name": "runtime-direct-pipeline",
+      "result": "passed",
+      "detail": "A real Runtime, SQLite worker and two real Plugin Host processes used direct transferred ports. An observe hook failure was disabled and execution continued to the next plugin."
+    },
+    {
+      "name": "mutating-hook-timeout",
+      "result": "passed",
+      "detail": "A mutating run.before hook exceeding three seconds ended the Run with plugin_hook_failed before any Provider request; Runtime emitted failed status to Main."
+    },
+    {
+      "name": "redacted-observability",
+      "result": "passed",
+      "detail": "JSONL contained plugin ID, stage, outcome and SHA-256 digest. The fake key and raw user prompt were absent. SQLite retained bounded middleware timeline facts."
+    },
+    {
+      "name": "plugin-settings-render",
+      "result": "passed",
+      "detail": "The real built renderer was captured and visually inspected at 1320x860 and 1000x680 in dark mode and at 1000x680 in light mode. Heading, trust warning, install action and empty state remained visible without overflow."
+    },
+    {
+      "name": "typecheck-and-build",
+      "result": "passed",
+      "detail": "npm run typecheck and npm run build completed successfully without adding dependencies."
+    }
+  ],
+  "limitations": [
+    "No real or paid Provider request was made; model.before/model.after quality was not evaluated against DeepSeek.",
+    "The renderer visual check used a narrow local bridge stub and is not an end-to-end Main/Runtime UI test.",
+    "Windows and Linux, malicious plugins, physical disk failure, and long-duration stress were not covered.",
+    "No unit tests were added, per project instruction."
+  ]
+}

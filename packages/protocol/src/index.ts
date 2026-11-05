@@ -5,6 +5,8 @@ import { TerminalCommand, TerminalSnapshot, TerminalProfile } from "./terminal";
 export * from "./terminal";
 import { AcceptanceEdit, Timeline } from "./timeline";
 export * from "./timeline";
+import { PluginCommand, PluginList, RuntimePluginDescriptor } from "./plugins";
+export * from "./plugins";
 // 构建时对Main/preload/Runtime注入同一标识；数据库格式版本独立维护，不跟随构建改变。
 declare const __APP_BUILD_ID__: string;
 declare const __APP_RUNTIME_DIGEST__: string;
@@ -32,6 +34,7 @@ export const ClientDiagnostic = z
       "settings_get",
       "settings_save",
       "workspace",
+      "plugins",
     ]),
     fields: z
       .array(
@@ -74,6 +77,7 @@ export const channels = {
   chatEvent: "chat:event",
   terminal: "terminal:command",
   terminalEvent: "terminal:event",
+  plugins: "plugins:command",
 } as const;
 export const RuntimeStatus = z
   .object({
@@ -115,6 +119,7 @@ export interface DesktopBridge {
   selectWorkspace(): Promise<WorkspaceSelection>;
   getSettings(): Promise<ModelSettings>;
   saveSettings(value: unknown): Promise<ModelSettings>;
+  plugins(value: import("./plugins").PluginCommand): Promise<import("./plugins").PluginList>;
   chat(value: ChatCommand): Promise<SessionSnapshot>;
   onChat(
     callback: (snapshot: SessionSnapshot) => void,
@@ -397,6 +402,22 @@ export const RuntimeRequest = z.discriminatedUnion("type", [
     .object({
       version: z.literal(1),
       id: z.string().uuid(),
+      type: z.literal("plugin.attach"),
+      plugin: RuntimePluginDescriptor,
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(1),
+      id: z.string().uuid(),
+      type: z.literal("plugin.detach"),
+      pluginId: z.string().min(3).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(1),
+      id: z.string().uuid(),
       type: z.literal("terminal.command"),
       command: TerminalCommand,
       authorizedRoot: z.string().max(4096).optional(),
@@ -439,6 +460,19 @@ export const RuntimeResponse = z
   })
   .strict();
 export const RuntimeEvent = z.discriminatedUnion("type", [
+  z
+    .object({
+      version: z.literal(1),
+      type: z.literal("plugin.status"),
+      payload: z
+        .object({
+          id: z.string().max(100),
+          status: z.enum(["failed", "disabled"]),
+          error: z.string().max(500),
+        })
+        .strict(),
+    })
+    .strict(),
   z
     .object({
       version: z.literal(1),

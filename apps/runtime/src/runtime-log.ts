@@ -27,6 +27,7 @@ const messages = {
   "subagent.completed": "子Agent生命周期已结束",
   "subagent.cancel_requested": "请求取消子Agent",
   "approval.hook_required": "内置命令钩子要求人工审批",
+  "plugin.hook_completed": "插件Hook已结算",
   "permission.changed": "用户切换审批权限",
   "approval.review_started": "开始独立模型审批审查",
   "approval.review_completed": "独立审批审查结束",
@@ -128,6 +129,7 @@ const fieldNames = [
   "commandRedacted",
   "commandOmitted",
   "commandLength",
+  "pluginId",
 ] as const;
 type Field = (typeof fieldNames)[number];
 export type RuntimeLogFields = Partial<

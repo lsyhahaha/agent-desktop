@@ -1680,3 +1680,23 @@ textarea {
 /* 输入组件统一边界，正文与工具栏共享外壳。 */
 .composer { border:0; }
 .compact-run-summary { font-size:12px; color:var(--text-muted); }
+
+/* 插件设置保持与模型设置相同的信息密度，权限警告始终可见且不依赖颜色。 */
+.plugin-settings { overflow:auto; }
+.plugin-warning { display:flex;flex-direction:column;gap:5px;margin:0 0 16px;padding:12px 14px;border:1px solid var(--warning,#b98238);border-radius:10px;background:var(--surface-muted,#eceff0);line-height:1.55; }
+.plugin-warning span,.plugin-card > p,.plugin-empty span { color:var(--text-muted,#596268); }
+.plugin-toolbar { display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap; }
+.plugin-toolbar button,.plugin-card button { min-height:32px;padding:6px 10px;border:1px solid var(--border,#dfe2e3);border-radius:7px; }
+.plugin-list { display:grid;gap:12px; }
+.plugin-card { padding:16px;border:1px solid var(--border,#dfe2e3);border-radius:12px;background:var(--card,#fff);min-width:0; }
+.plugin-card header { display:flex;align-items:flex-start;justify-content:space-between;gap:12px; }
+.plugin-card h2 { margin:0 0 4px;font-size:16px;overflow-wrap:anywhere; }
+.plugin-card code { overflow-wrap:anywhere;color:var(--text-muted,#596268); }
+.plugin-status { flex-shrink:0;padding:4px 8px;border-radius:999px;background:var(--surface-muted,#eceff0);font-size:12px; }
+.plugin-status.ready { color:var(--success,#38664c); }
+.plugin-status.failed,.plugin-status.incompatible { color:var(--danger,#a13c36); }
+.plugin-hooks { display:flex;flex-wrap:wrap;gap:6px;margin:12px 0; }
+.plugin-hooks span { padding:4px 7px;border-radius:6px;background:var(--surface-muted,#eceff0);font-size:12px;overflow-wrap:anywhere; }
+.plugin-card footer { display:flex;gap:7px;flex-wrap:wrap;margin-top:12px; }
+.plugin-card footer .danger { margin-left:auto;color:var(--danger,#a13c36); }
+.plugin-empty { display:flex;flex-direction:column;gap:6px;padding:28px;border:1px dashed var(--border,#dfe2e3);border-radius:12px;text-align:center; }

@@ -1,4 +1,4 @@
-import { utilityProcess, type UtilityProcess } from "electron";
+import { utilityProcess, type MessagePortMain, type UtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
 import {
   TerminalReply,
@@ -20,6 +20,7 @@ type Pending = {
 export class RuntimeHost {
   private child: UtilityProcess | undefined;
   private pending = new Map<string, Pending>();
+  private pluginStatus: (value: { id: string; status: "failed" | "disabled"; error: string }) => void = () => {};
   constructor(
     private readonly entry: string,
     private readonly onSnapshot: (value: SessionSnapshot) => void,
@@ -55,7 +56,8 @@ export class RuntimeHost {
       if (event.success) {
         if (event.data.type === "terminal.snapshot")
           this.onTerminal(event.data.payload);
-        else this.onSnapshot(event.data.payload);
+        else if (event.data.type === "agent.snapshot") this.onSnapshot(event.data.payload);
+        else this.pluginStatus(event.data.payload);
         return;
       }
       const parsed = RuntimeResponse.safeParse(data);
@@ -77,6 +79,9 @@ export class RuntimeHost {
         console.warn("[runtime] exited", code);
       }
     });
+  }
+  setPluginStatusHandler(handler: typeof this.pluginStatus) {
+    this.pluginStatus = handler;
   }
   async status(): Promise<DesktopStatus["runtime"]> {
     const result = RuntimeStatus.safeParse(
@@ -118,6 +123,31 @@ export class RuntimeHost {
             ? error
             : new Error("Runtime transport failed"),
         );
+      }
+    });
+  }
+  /** Main只移交已校验插件的专用端口；后续Hook流量不经过Main。 */
+  attachPlugin(plugin: import("@protocol").RuntimePluginDescriptor, port: MessagePortMain) {
+    return this.requestWithPorts({ type: "plugin.attach", plugin }, [port]);
+  }
+  detachPlugin(pluginId: string) {
+    return this.request({ type: "plugin.detach", pluginId });
+  }
+  private requestWithPorts(fields: Record<string, unknown>, ports: MessagePortMain[]) {
+    if (!this.child) return Promise.reject(new Error("Runtime unavailable; restart the application"));
+    const child = this.child, id = randomUUID();
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error("Runtime response timed out"));
+      }, 10000);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        child.postMessage({ version: 1, id, ...fields }, ports);
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error("Runtime transport failed"));
       }
     });
   }
