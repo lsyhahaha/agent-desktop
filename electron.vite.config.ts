@@ -43,6 +43,7 @@ export default defineConfig({
           "strategy-lab": resolve("apps/desktop/main/strategy-lab.ts"),
           "evolution-admin": resolve("apps/desktop/main/evolution-admin.ts"),
           "storage-worker": resolve("apps/runtime/src/storage-worker.ts"),
+          "plugin-host": resolve("apps/runtime/src/plugin-host.ts"),
         },
         formats: ["es"],
       },

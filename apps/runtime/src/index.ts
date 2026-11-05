@@ -5,6 +5,7 @@ import { TerminalManager } from "./terminal";
 import { RuntimeRequest, BUILD_ID, PROTOCOL_VERSION } from "@protocol";
 import { Sessions } from "./sessions";
 import { stopAllCommands } from "./exec-command";
+import { PluginConnections } from "./hook-pipeline";
 const port = process.parentPort;
 if (!port) throw new Error("Runtime requires parent port");
 const path = process.argv
@@ -16,11 +17,15 @@ protectRuntimeDirectory(logDirectory);
 const logs = new RuntimeLogs(logDirectory);
 logs.root.event("runtime.started", { nodeVersion: process.versions.node });
 console.info("[runtime-log] directory", logDirectory);
+const plugins = new PluginConnections((payload) =>
+  port.postMessage({ version: 1, type: "plugin.status", payload }),
+);
 const sessions = new Sessions(
   (snapshot) =>
     port.postMessage({ version: 1, type: "agent.snapshot", payload: snapshot }),
   path,
   logs,
+  plugins,
 );
 const terminal = new TerminalManager((snapshot) =>
   port.postMessage({
@@ -36,7 +41,7 @@ void ready.catch(() =>
 );
 let queue: Promise<unknown> = Promise.resolve();
 let closing = false;
-port.on("message", ({ data }: { data: unknown }) => {
+port.on("message", ({ data, ports }: import("electron").MessageEvent) => {
   const parsed = RuntimeRequest.safeParse(data);
   if (!parsed.success) {
     console.warn("[runtime] invalid request");
@@ -48,7 +53,15 @@ port.on("message", ({ data }: { data: unknown }) => {
       await ready;
       if (closing) throw new Error("Runtime closing");
       let payload: unknown;
-      if (request.type === "runtime.shutdown") {
+      if (request.type === "plugin.attach") {
+        const pluginPort = ports?.[0];
+        if (!pluginPort) throw new Error("插件端口缺失");
+        plugins.attach(request.plugin, pluginPort);
+        payload = null;
+      } else if (request.type === "plugin.detach") {
+        plugins.detach(request.pluginId);
+        payload = null;
+      } else if (request.type === "runtime.shutdown") {
         closing = true;
         // 先取消模型/命令，再等待终态落盘和Worker关闭，不能直接exit丢掉最后一次事务。
         logs.root.event("runtime.stopping");

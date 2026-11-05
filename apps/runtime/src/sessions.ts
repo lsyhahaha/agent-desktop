@@ -14,6 +14,7 @@ import type { z } from "zod";
 import { Agent } from "./agent";
 import { SessionStore } from "./storage";
 import type { SessionMeta } from "./storage-types";
+import type { PluginConnections } from "./hook-pipeline";
 
 type Entry = { meta: SessionMeta; agent: Agent; runs: SessionSnapshot["runs"] };
 /** 数据库保留全部会话，内存只加载当前Agent和20条索引；单个时刻仍只运行一个任务。 */
@@ -30,6 +31,7 @@ export class Sessions {
     private emit: (snapshot: SessionSnapshot) => void,
     private readonly databasePath: string,
     private readonly logs?: RuntimeLogs,
+    private readonly plugins?: PluginConnections,
   ) {
     this.store = new SessionStore(databasePath, (message) => {
       this.storageError = message;
@@ -104,6 +106,7 @@ export class Sessions {
       },
       (runId, secrets) =>
         this.logs?.run(entry.meta.id, runId, secrets) ?? nullRunLog,
+      this.plugins,
     );
     entry.agent.restore(loaded.chat, loaded.history);
     this.entry = entry;

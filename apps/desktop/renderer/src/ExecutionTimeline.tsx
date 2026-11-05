@@ -20,6 +20,7 @@ const states = {
   unknown: "结果未确认",
 };
 const icons: Record<TimelineItem["type"], string> = {
+  middleware: "M4 6h12M4 10h12M4 14h12M7 4v12M13 4v12",
   acceptance: "M7 5h10M7 10h10M7 15h10M3 5h1M3 10h1M3 15h1",
   approval_review: "M10 2 17 5v5c0 4-7 8-7 8s-7-4-7-8V5z",
   model: "M4 4h12v12H4z M7 7h6v6H7z",
@@ -52,6 +53,17 @@ function Disclosure({
 }
 function Detail({ item }: { item: TimelineItem }) {
   switch (item.type) {
+    case "middleware":
+      return (
+        <>
+          <p>
+            {item.data.pluginName} · {item.data.stage} ·{" "}
+            {{ modified: "已改写", denied: "已拒绝", failed: "执行失败", disabled: "已降级停用" }[item.data.outcome]}
+          </p>
+          {item.data.changedFields.length > 0 && <small>变更字段：{item.data.changedFields.join("、")}</small>}
+          <small>输入摘要：{item.data.inputDigest.slice(0, 16)}</small>
+        </>
+      );
     case "acceptance":
       return null;
     case "approval_review":

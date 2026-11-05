@@ -13,6 +13,8 @@ import {
   DIAGNOSTIC_PREFIX,
   validationFields,
   type DesktopBridge,
+  PluginCommand,
+  PluginList,
 } from "@protocol";
 import type { z } from "zod";
 
@@ -24,7 +26,8 @@ type Operation =
   | "chat_event"
   | "settings_get"
   | "settings_save"
-  | "workspace";
+  | "workspace"
+  | "plugins";
 const reported = new Map<string, number>();
 let incompatible = false;
 const mismatch =
@@ -153,6 +156,13 @@ const bridge: DesktopBridge = Object.freeze({
       channels.settingsSave,
       ModelSettings,
       validate(SaveSettings, value, "settings_save", true),
+    ),
+  plugins: (value: unknown) =>
+    invoke(
+      "plugins",
+      channels.plugins,
+      PluginList,
+      validate(PluginCommand, value, "plugins", true),
     ),
   chat: (value: unknown) =>
     invoke(

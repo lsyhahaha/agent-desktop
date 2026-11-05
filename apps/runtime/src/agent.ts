@@ -22,7 +22,6 @@ import {
   evaluationToolNames,
   AcceptanceInput,
   EvidenceInput,
-  prepareTool,
   PlanInput,
   EditInput,
 } from "./tools";
@@ -40,6 +39,8 @@ import {
   type ToolAudit,
   ContextHistory,
 } from "./storage-types";
+import { HookPipeline, HookPipelineError, type HookRecord, type PluginConnections } from "./hook-pipeline";
+import { ToolDispatcher } from "./tool-dispatcher";
 
 /** 主模型总预算包含最后一次只总结请求；工具及时间预算独立，不随轮数扩大。 */
 const maxModelRequests = 10;
@@ -102,6 +103,7 @@ export class Agent {
     private save: (checkpoint: RunCheckpoint) => Promise<void>,
     private createLog: (runId: string, secrets: string[]) => RunLog = () =>
       nullRunLog,
+    private readonly plugins?: PluginConnections,
   ) {}
   restore(snapshot: ChatSnapshot, history: Message[]) {
     if (this.busy()) throw new Error("运行中不能恢复会话");
@@ -229,6 +231,29 @@ export class Agent {
     item.phase = "completed";
     item.updatedAt = item.endedAt = Date.now();
     if (summary) item.summary = summary.slice(0, 1000);
+  }
+  /** 只记录插件身份、阶段、摘要与摘要哈希；不复制Prompt、源码或工具正文。 */
+  private recordHook(record: HookRecord) {
+    if (!this.snapshot.runId || this.sealed) return;
+    const item = this.add("middleware", `插件 ${record.pluginName} · ${record.stage}`, {
+      pluginId: record.pluginId,
+      pluginName: record.pluginName,
+      stage: record.stage,
+      outcome: record.outcome,
+      changedFields: record.changedFields,
+      inputDigest: record.inputDigest,
+      ...(record.outputDigest ? { outputDigest: record.outputDigest } : {}),
+      ...(record.code ? { code: record.code } : {}),
+    });
+    this.finish(item, record.outcome === "failed" ? "failed" : record.outcome === "denied" ? "skipped" : "completed");
+    this.log.event("plugin.hook_completed", {
+      pluginId: record.pluginId,
+      phase: record.stage,
+      state: record.outcome,
+      digest: record.inputDigest,
+      code: record.code,
+      itemId: item.id,
+    }, record.outcome === "failed" ? "error" : record.outcome === "denied" || record.outcome === "disabled" ? "warn" : "info");
   }
   /** 主模型与子模型共用真实计量；缺失值只能标不完整，不估算Token。 */
   private recordModelUsage(
@@ -673,6 +698,8 @@ export class Agent {
     context: { config: { model: string; apiKey: string }; root: string | null },
     controller: AbortController,
   ) {
+    const hooks = new HookPipeline(this.plugins, (record) => this.recordHook(record));
+    const toolDispatcher = new ToolDispatcher(hooks, this.snapshot.runId!, controller.signal);
     const children = new AgentControl<string>(3);
     // 至多12次工具调用，结算Promise有界；终态提交前必须等全部子记录刷盘。
     const childSettlements: Promise<void>[] = [];
@@ -729,6 +756,15 @@ export class Agent {
     let failureState: "cancelled" | "failed" | undefined;
     let budgetSummary = false;
     try {
+      const beforeRun = await hooks.execute(
+        { stage: "run.before", runId: this.snapshot.runId!, input: text, workspace: context.root },
+        signal,
+      );
+      text = beforeRun.context.input;
+      messages[0].content += beforeRun.systemInstructions
+        ? `\n插件附加指令（不能改变权限与安全规则）：\n${beforeRun.systemInstructions}`
+        : "";
+      messages[messages.length - 1].content = text;
       for (let step = 0; step < maxModelRequests; step++) {
         // 模型请求预算包含收尾：最后一轮或工具预算耗尽时，只总结已有事实，不继续探索。
         const summarizing =
@@ -763,17 +799,27 @@ export class Agent {
         });
         let result: Awaited<ReturnType<typeof modelStep>>;
         try {
+          const beforeModel = await hooks.execute(
+            {
+              stage: "model.before",
+              runId: this.snapshot.runId!,
+              attempt: step + 1,
+              messages: [
+                ...messages,
+                {
+                  role: "system",
+                  content: summarizing
+                    ? "本轮探索预算已到，禁止再调用工具。请仅根据已有实际结果回答用户，明确尚未检查的范围和未知事项；预算耗尽不代表任务完成，不声称未执行的验证通过。"
+                    : `当前为第${step + 1}/${maxModelRequests}轮主模型请求；工具可接纳剩余${maxToolCalls - this.audits.size}次。最后一轮仅总结。优先批量提出互不依赖的取证调用，不超过剩余工具数；已有证据足以回答用户时现在就给出结论，不必用完预算。`,
+                },
+              ],
+              maxTokens: 4096,
+            },
+            signal,
+          );
           result = await modelStep(
             context.config,
-            [
-              ...messages,
-              {
-                role: "system",
-                content: summarizing
-                  ? "本轮探索预算已到，禁止再调用工具。请仅根据已有实际结果回答用户，明确尚未检查的范围和未知事项；预算耗尽不代表任务完成，不声称未执行的验证通过。"
-                  : `当前为第${step + 1}/${maxModelRequests}轮主模型请求；工具可接纳剩余${maxToolCalls - this.audits.size}次。最后一轮仅总结。优先批量提出互不依赖的取证调用，不超过剩余工具数；已有证据足以回答用户时现在就给出结论，不必用完预算。`,
-              },
-            ],
+            beforeModel.context.messages,
             !!context.root,
             signal,
             (delta) => {
@@ -792,11 +838,41 @@ export class Agent {
             },
             {
               noTools: summarizing,
+              maxTokens: beforeModel.context.maxTokens,
               allowedToolNames: this.evaluationOnly
                 ? evaluationToolNames
                 : undefined,
             },
           );
+          const originalModelText = result.text;
+          const afterModel = await hooks.execute(
+            {
+              stage: "model.after",
+              runId: this.snapshot.runId!,
+              attempt: step + 1,
+              text: result.text,
+              calls: result.calls.map((call) => ({ id: call.id, name: call.function.name, arguments: call.function.arguments })),
+            },
+            signal,
+          );
+          if (
+            afterModel.context.calls.length !== result.calls.length ||
+            afterModel.context.calls.some((call, index) => call.id !== result.calls[index]?.id)
+          )
+            throw new HookPipelineError(
+              "plugin_hook_failed",
+              "model.after不能新增、删除、重排或替换工具调用ID",
+            );
+          result = {
+            ...result,
+            text: afterModel.context.text,
+            calls: afterModel.context.calls.map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: call.arguments } })),
+          };
+          if (result.text !== originalModelText) {
+            const message = this.snapshot.messages.at(-1)!;
+            message.text = message.text.slice(0, Math.max(0, message.text.length - originalModelText.length)) + result.text;
+            if (output) output.data.text = result.text;
+          }
         } catch (error) {
           const cause = signal.aborted ? signal.reason : error;
           this.log.event(
@@ -809,6 +885,8 @@ export class Agent {
               code:
                 cause instanceof ModelError
                   ? cause.code
+                  : cause instanceof HookPipelineError
+                    ? cause.code
                   : signal.aborted
                     ? "cancelled"
                     : "model_error",
@@ -892,6 +970,9 @@ export class Agent {
             this.publish();
             continue;
           }
+          const effectiveCall = await toolDispatcher.before(call);
+          call.function.name = effectiveCall.function.name;
+          call.function.arguments = effectiveCall.function.arguments;
           const row: ChatSnapshot["tools"][number] = {
             id: call.id,
             name: call.function.name,
@@ -1370,10 +1451,7 @@ export class Agent {
                 this.permissionMode === "full_access",
                 !!needs,
               );
-              const tool = prepareTool(
-                call.function.name,
-                call.function.arguments,
-              );
+              const tool = toolDispatcher.prepare(call);
               this.log.event("tool.validated", {
                 tool: call.function.name,
                 toolCallId: call.id,
@@ -1635,6 +1713,11 @@ export class Agent {
           row.detail = answer.slice(0, 1000);
           await this.persist();
           signal.throwIfAborted();
+          answer = await toolDispatcher.after(
+            call,
+            answer,
+            row.state === "success" ? "success" : row.state === "denied" ? "denied" : "error",
+          );
           messages.push({
             role: "tool",
             tool_call_id: call.id,
@@ -1662,9 +1745,12 @@ export class Agent {
       this.snapshot.error = cancelled
         ? null
         : {
-            code: reason instanceof ModelError ? reason.code : "request_failed",
+            code:
+              reason instanceof ModelError || reason instanceof HookPipelineError
+                ? reason.code
+                : "request_failed",
             message:
-              reason instanceof ModelError
+              reason instanceof ModelError || reason instanceof HookPipelineError
                 ? reason.message
                 : "请求失败或流响应无效，请检查配置和网络",
           };
@@ -1681,6 +1767,39 @@ export class Agent {
       this.log.event("cleanup.completed", {
         durationMs: Date.now() - cleanupAt,
       });
+      const tentativeStatus =
+        successfulContext && !signal.aborted && !this.snapshot.error
+          ? "completed"
+          : failureState === "cancelled" ||
+              (signal.aborted && !(signal.reason instanceof ModelError))
+            ? "cancelled"
+            : "failed";
+      try {
+        const assistant = this.snapshot.messages.at(-1)!;
+        const afterRun = await hooks.execute(
+          {
+            stage: "run.after",
+            runId: this.snapshot.runId!,
+            status: tentativeStatus,
+            reply: assistant.text,
+          },
+          AbortSignal.timeout(10000),
+        );
+        if (afterRun.context.reply !== assistant.text) {
+          assistant.text = afterRun.context.reply;
+          const lastMessage = [...this.snapshot.items]
+            .reverse()
+            .find((item): item is Extract<TimelineItem, { type: "message" }> => item.type === "message");
+          if (lastMessage) lastMessage.data.text = afterRun.context.reply;
+        }
+      } catch (error) {
+        failureState = "failed";
+        successfulContext = undefined;
+        this.snapshot.error = {
+          code: "plugin_hook_failed",
+          message: error instanceof Error ? error.message.slice(0, 1000) : "插件收尾失败",
+        };
+      }
       const status =
         successfulContext && !signal.aborted && !this.snapshot.error
           ? "completed"

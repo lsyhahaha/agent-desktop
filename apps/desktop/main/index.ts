@@ -19,12 +19,15 @@ import {
   PROTOCOL_VERSION,
   ClientDiagnostic,
   DIAGNOSTIC_PREFIX,
+  PluginCommand,
+  PluginList,
 } from "@protocol";
 import { Settings } from "./settings";
 import { realpath } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { ChatCommand, ChatSnapshot, SaveSettings } from "@protocol";
 import { RuntimeHost } from "./runtime";
+import { PluginManager } from "./plugin-manager";
 const here = dirname(fileURLToPath(import.meta.url));
 let window: BrowserWindow | undefined;
 let active = false;
@@ -59,6 +62,7 @@ const runtime = new RuntimeHost(
       window.webContents.send(channels.terminalEvent, snapshot);
   },
 );
+let plugins: PluginManager | undefined;
 const rendererFile = join(here, "../renderer/index.html");
 function devUrl(): string | undefined {
   if (app.isPackaged || !process.env.ELECTRON_RENDERER_URL) return undefined;
@@ -213,6 +217,14 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
       runtime.start(
         join(app.getPath("userData"), "storage", "sessions.sqlite"),
       );
+      await runtime.status();
+      plugins = new PluginManager(
+        join(app.getPath("userData"), "plugins"),
+        join(here, "plugin-host.js"),
+        runtime,
+        () => active || dispatching,
+      );
+      await plugins.load();
       ipcMain.handle(channels.settingsGet, (event) => {
         assertSender(event);
         return settings.view();
@@ -221,6 +233,45 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
         assertSender(event);
         if (active || dispatching) throw new Error("运行期间不能更改模型");
         return settings.save(SaveSettings.parse(raw));
+      });
+      ipcMain.handle(channels.plugins, async (event, raw: unknown) => {
+        assertSender(event);
+        if (!plugins) throw new Error("插件管理器尚未就绪");
+        const command = PluginCommand.parse(raw);
+        if (command.type === "install") {
+          if (active || dispatching) throw new Error("请先停止当前运行再安装插件");
+          const warning = await dialog.showMessageBox(window!, {
+            type: "warning",
+            title: "安装受信任的本地插件？",
+            message: "插件是本地可执行代码，可能访问你的文件或网络。",
+            detail: "独立进程只提供故障隔离，不是安全沙箱。请只安装你已审查并信任的插件目录；Agent Desktop不会运行npm安装脚本。",
+            buttons: ["取消", "选择插件目录"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          });
+          if (warning.response !== 1) return plugins.view();
+          const selected = await dialog.showOpenDialog(window!, {
+            title: "选择包含 manifest.json 的插件目录",
+            properties: ["openDirectory"],
+          });
+          if (selected.canceled || !selected.filePaths[0]) return plugins.view();
+          return PluginList.parse(await plugins.install(await realpath(selected.filePaths[0])));
+        }
+        if (command.type === "set_enabled" && command.enabled) {
+          const warning = await dialog.showMessageBox(window!, {
+            type: "warning",
+            title: "启用本地插件？",
+            message: "启用后，插件可以观察或改写声明的Run、模型和工具数据。",
+            detail: "插件不会收到模型API Key，也不能提高Agent权限或绕过删除审批；但插件代码本身仍以当前用户身份运行。",
+            buttons: ["取消", "启用"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          });
+          if (warning.response !== 1) return plugins.view();
+        }
+        return PluginList.parse(await plugins.command(command));
       });
       let openingTerminal = false;
       ipcMain.handle(channels.terminal, async (event, raw: unknown) => {
@@ -392,6 +443,8 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
     event.preventDefault();
     quitting = true;
     // 原生退出先等待Runtime取消与刷盘；超时由RuntimeHost处理，避免无限阻塞退出。
-    void runtime.stop().finally(() => app.quit());
+    void Promise.resolve(plugins?.close()).finally(() =>
+      runtime.stop().finally(() => app.quit()),
+    );
   });
 }

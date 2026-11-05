@@ -118,6 +118,31 @@ export const AcceptanceEdit = z
   .strict();
 export const TimelineItem = z.discriminatedUnion("type", [
   z
+    .object({
+      ...base,
+      type: z.literal("middleware"),
+      data: z
+        .object({
+          pluginId: z.string().max(100),
+          pluginName: z.string().max(80),
+          stage: z.enum([
+            "run.before",
+            "model.before",
+            "model.after",
+            "tool.before",
+            "tool.after",
+            "run.after",
+          ]),
+          outcome: z.enum(["modified", "denied", "failed", "disabled"]),
+          changedFields: z.array(z.string().max(80)).max(12),
+          inputDigest: z.string().length(64),
+          outputDigest: z.string().length(64).optional(),
+          code: z.string().max(100).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
     .object({ ...base, type: z.literal("acceptance"), data: AcceptanceData })
     .strict(),
   z
