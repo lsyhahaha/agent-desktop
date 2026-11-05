@@ -1,0 +1,57 @@
+{
+  "key": "self-evolution-3-workspace-ui",
+  "projectPath": "/Users/a1111/Desktop/agent-desktop",
+  "title": "自进化第3轮：工作区阅读、导航、草稿与改动审阅",
+  "occurredOn": "2026-11-06",
+  "trigger": "用户确认工作区界面改进需求，要求完整实施并验收后交付。",
+  "baselineCommit": "cddb8f0",
+  "changes": [
+    "回复与执行信息分层，保留重要步骤、完整工具详情与验收条件，增加代码/回复/命令复制和同轮文件记录定位。",
+    "按项目分页任务与正文搜索，恢复最近访问任务，保留非空草稿，增加无项目入口、自然日分组与更新时间。",
+    "草稿通过唯一存储Worker持久化，发送和切换前等待确认；数据库v6到v7新增草稿与项目导航，协议升级11。",
+    "支持宽幅阅读、展开输入、本机布局偏好和失败输入取回，主题入口与输入层级调整。",
+    "右侧只读Git差异区分暂存/未暂存/未跟踪，约束资源和路径保护，支持显式打开受校验文本源码。",
+    "将受控验收入口纳入仓库，覆盖真实生产Main/preload/Runtime/Worker和独立React界面。",
+    "保存、发送与导航共用过渡锁，取消旧延迟保存并锁定编辑，防止新输入丢失或发送后草稿复活；移除重复的前端历史草稿缓存。"
+  ],
+  "validations": [
+    {
+      "kind": "build",
+      "result": "npm run build包含类型检查及git diff --check通过，现有Zod注释警告不影响构建。"
+    },
+    {
+      "kind": "controlled",
+      "result": "隔离会话/Worker/SQLite/React完成24组检查，覆盖项目分页/正文搜索/草稿恢复与故障/旧库迁移/Git混合状态与删除和二进制/输入法/复制/同轮文件定位/审批拒绝和取消等。 延迟保存回归验证发送中禁止编辑且清空后不被旧保存重新覆盖。"
+    },
+    {
+      "kind": "controlled",
+      "result": "生产Main/preload/utility Runtime/Worker完成3组跨进程检查，原生目录选择和系统打开动作由替身提供，验证过期会话与路径拒绝。"
+    },
+    {
+      "kind": "manual",
+      "result": "已实际查看合成数据下默认、最小窗口和浅色改动面板截图，修正重复用量、日期选中背景、侧栏间距及输入边框。"
+    }
+  ],
+  "comparison": null,
+  "limitations": [
+    "模型、PTY与剪贴板使用替身；生产链路没有请求真实Provider，系统编辑器启动用替身，不代表完整OS编辑器兼容验收。",
+    "未做跨平台、长期压力、真实付费模型或业务正确性评估。",
+    "草稿停止输入约500ms后保存，未确认保存的内容遇强制退出仍可能丢失，界面显示保存状态。",
+    "Git视图为受限只读查询快照，修改归属未知，隐藏/凭据路径沿用访问限制，差异不是全仓持续监控。",
+    "正式实例升级与本轮记录落库须在用户确认草稿与任务状态、正常退出及一致备份后执行。"
+  ],
+  "evidence": [
+    {
+      "path": "docs/evidence/workspace-ui/controlled.json",
+      "sha256": "b41f13e9ab8b2a11b328f39400df860775fcbabe8e52bce86071fd6000c7b019"
+    },
+    {
+      "path": "docs/evidence/workspace-ui/production-chain.json",
+      "sha256": "30d34ddac1aca4ad2bbccedf58347598f5ca0789a6afb8a428d350cf2b9a5682"
+    },
+    {
+      "path": "apps/desktop/renderer/src/App.tsx",
+      "sha256": "90bee0b44e0cef75e024d98222893c165eb5fd14722e68699bf9a1f5ab06e676"
+    }
+  ]
+}

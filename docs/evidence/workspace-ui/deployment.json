@@ -1,0 +1,57 @@
+{
+  "schemaBefore": 6,
+  "schemaAfter": 7,
+  "backupVerified": true,
+  "backupSHA256": "b8fc6947a54dcb726d0ad9f09dee2e99a87994d40a584a9478c8dcb9fe7639bc",
+  "integrityCheck": "ok",
+  "businessCountsBefore": {
+    "sessions": 7,
+    "runs": 37,
+    "messages": 74,
+    "tool_calls": 100,
+    "session_context": 6,
+    "timeline_items": 284,
+    "run_event_heads": 3,
+    "run_events": 57,
+    "evolution_records": 2,
+    "reading_strategy_selections": 0,
+    "reading_strategy_evaluations": 0
+  },
+  "businessCountsAfter": {
+    "sessions": 7,
+    "runs": 37,
+    "messages": 74,
+    "tool_calls": 100,
+    "session_context": 6,
+    "timeline_items": 284,
+    "run_event_heads": 3,
+    "run_events": 57,
+    "evolution_records": 3,
+    "reading_strategy_selections": 0,
+    "reading_strategy_evaluations": 0
+  },
+  "evolutionRecordId": "87a654c9-0a58-4ad9-b318-d463fad1ce4a",
+  "evolutionKey": "self-evolution-3-workspace-ui",
+  "startupVerified": true,
+  "historyRestored": true,
+  "nativeViewVerified": true,
+  "historyTableHashesPreserved": {
+    "runs": true,
+    "messages": true,
+    "tool_calls": true,
+    "session_context": true,
+    "timeline_items": true,
+    "run_event_heads": true,
+    "run_events": true
+  },
+  "modelRequestsAddedDuringDeployment": 0,
+  "visibleControls": [
+    "当前项目",
+    "无项目对话",
+    "宽幅阅读",
+    "展开编辑区",
+    "执行详情 · 模型请求",
+    "本轮选项与统计"
+  ],
+  "historyPreview": "已打开原有“你好”会话确认正文与折叠详情恢复"
+}

@@ -55,9 +55,9 @@ export function ThemePicker() {
   return (
     <div className="theme-controls">
       <button ref={trigger} className="settings-trigger" type="button"
-        aria-label="换肤" title="换肤" popoverTarget="theme-menu">
+        aria-label="切换主题" title="切换主题" popoverTarget="theme-menu">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="m8 3-5 4-2 5 4 2 2-3v10h10V11l2 3 4-2-2-5-5-4c0 4-8 4-8 0Z" />
+          <circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" />
         </svg>
       </button>
       <div id="theme-menu" ref={menu} className="settings-popover theme-popover"

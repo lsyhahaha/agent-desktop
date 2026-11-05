@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CopyText } from "./MarkdownReply";
 import {
   acceptanceResult,
   isEvidenceRecord,
@@ -53,6 +54,7 @@ export function ToolDetail({
             <dt>{args.command ? "命令" : "对象"}</dt>
             <dd>
               <pre>{args.command ? text("command") : text("path")}</pre>
+              {!!args.command && <CopyText text={text("command")} label="复制完整命令" />}
             </dd>
             <dt>工作目录</dt>
             <dd>{data.cwd ?? text("path")}</dd>

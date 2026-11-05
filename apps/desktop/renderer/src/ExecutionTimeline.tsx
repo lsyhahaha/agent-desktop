@@ -173,10 +173,18 @@ function Detail({ item }: { item: TimelineItem }) {
       return (
         <>
           <p>{item.data.result}</p>
+          <p className="compact-run-summary">文件修改 {item.data.files.length}项 · 检查 {item.data.verificationPassed}通过 / {item.data.verificationFailed}失败 / {item.data.verificationUnknown}未确认</p>
+          <details><summary>修改与检查范围</summary>
           <p>
             已确认结构化修改：
             {item.data.files.length
-              ? item.data.files.join("、")
+              ? item.data.files.map((path) => <button key={path} onClick={(event) => {
+                  const node = event.currentTarget.closest(".execution-timeline")?.querySelector<HTMLElement>(`[data-file-path="${CSS.escape(path)}"]`);
+                  if (!node) return;
+                  let parent = node.parentElement;
+                  while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+                  node.scrollIntoView({block: "center"}); node.focus({preventScroll: true});
+                }}>{path}</button>)
               : "无已确认修改"}
           </p>
           <p className="muted">
@@ -189,7 +197,7 @@ function Detail({ item }: { item: TimelineItem }) {
             item.data.verificationUnknown
               ? `验证命令：${item.data.verificationPassed} 通过 / ${item.data.verificationFailed} 失败 / ${item.data.verificationUnknown} 未确认`
               : "未验证"}
-          </p>
+          </p></details>
         </>
       );
     case "mcp":
@@ -280,6 +288,15 @@ function Interaction({
     </div>
   );
 }
+/** 文件引用只定位当前已存在的审计节点，不赋予读取或打开权限。 */
+function recordPath(item: TimelineItem): string | undefined {
+  if (item.type === "file_change") return item.data.path;
+  if (item.type !== "tool") return undefined;
+  try {
+    const args = JSON.parse(item.data.arguments);
+    return typeof args?.path === "string" ? args.path : undefined;
+  } catch { return undefined; }
+}
 const Item = memo(function Item({
   item,
   interaction,
@@ -295,6 +312,7 @@ const Item = memo(function Item({
       id={`evidence-${item.id}`}
       tabIndex={-1}
       className={`timeline-item ${item.status} type-${item.type}`}
+      data-file-path={recordPath(item)}
       data-minimap-id={item.id}
       data-minimap-round={item.runId}
       data-minimap-kind={item.type === "message" ? "assistant" : "tool"}
@@ -317,13 +335,14 @@ const Item = memo(function Item({
         </svg>
       </span>
       <div className="timeline-body">
-        <div className="timeline-heading">
+        {item.type !== "message" && <div className="timeline-heading">
           <strong>{item.summary}</strong>
           <span>{states[item.status]}</span>
           {item.endedAt !== null && (
             <time>{((item.endedAt - item.createdAt) / 1000).toFixed(1)}s</time>
           )}
-        </div>
+        </div>}
+        {item.type === "message" && <span className="sr-only">Agent回复</span>}
         <Detail item={item} />
         {current && (
           <Interaction
@@ -356,12 +375,17 @@ export function ExecutionTimeline({
   editable?: boolean;
   onEdit?: (command: ChatCommand) => Promise<boolean>;
 }) {
+  // 普通聊天仅呈现回复；审计继续保留，异常、审批与修改不因收起而隐藏。
+  const hasWork = items.some((item) =>
+    ["tool", "file_change", "error", "interaction", "acceptance"].includes(item.type),
+  );
   return (
     <section className="execution-timeline" aria-label="Agent 执行时间线">
       <ProgressClock items={items} />
       <ol>
         {timelineGroups(items).map((group) => {
           const item = group[0];
+          if (item.type === "summary" && !hasWork && item.status === "completed") return null;
           if (item.type === "model" && item.data.parentItemId) return null;
           if (
             item.type === "tool" &&
@@ -391,6 +415,12 @@ export function ExecutionTimeline({
               : [];
           return (
             <li key={item.id} className="timeline-group">
+              {/* details保持挂载身份，流式更新和结束不会覆盖用户的展开选择。 */}
+              <ExecutionDisclosure important={
+                !group.every((entry) => entry.status === "completed") ||
+                [...children, ...controls].some((entry) => entry.status !== "completed") ||
+                ["message", "error", "interaction", "file_change", "summary", "plan"].includes(item.type)
+              } label={item.type === "model" ? "执行详情 · 模型请求" : item.summary}>
               {group.length > 1 ? (
                 <details>
                   <summary>{group.length}次已完成读取</summary>
@@ -430,7 +460,7 @@ export function ExecutionTimeline({
                 </section>
               )}
               {!!controls.length && (
-                <details>
+                <details open={controls.some((entry) => entry.status !== "completed") || undefined}>
                   <summary>{controls.length}次轮询/停止调用审计</summary>
                   <ol>
                     {controls.map((control) => (
@@ -444,21 +474,38 @@ export function ExecutionTimeline({
                   </ol>
                 </details>
               )}
+              </ExecutionDisclosure>
             </li>
           );
         })}
       </ol>
+      <details className="run-options"><summary>本轮选项与统计</summary>
       <RunMetrics items={items} audits={tools} />
-      <AcceptancePanel
+      {!items.some((i) => i.type === "acceptance") && <AcceptancePanel
         key={`${runId}-${items.find((i) => i.type === "acceptance")?.updatedAt ?? 0}`}
         items={items}
         sessionId={sessionId}
         runId={runId}
         editable={editable}
         onEdit={onEdit}
-      />
+      />}
+      </details>
+      {items.some((i) => i.type === "acceptance") && <AcceptancePanel items={items}
+        sessionId={sessionId} runId={runId} editable={editable} onEdit={onEdit} /> }
     </section>
   );
+}
+
+/** 用户展开状态只属于展示层；重要记录始终可见，证据节点保持挂载。 */
+function ExecutionDisclosure({ important, label, children }: {
+  important: boolean; label: string; children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return <details className={`routine-execution${important ? " is-important" : ""}`}
+    open={important || expanded}
+    onPointerDownCapture={() => { if (important) setExpanded(true); }} onFocusCapture={() => { if (important) setExpanded(true); }} onToggle={(event) => {
+      if (!important) setExpanded(event.currentTarget.open);
+    }}><summary>{label}</summary>{children}</details>;
 }
 
 /** 只压缩连续读取；错误/审批/修改保持原位置，命令控制审计仍可展开。 */

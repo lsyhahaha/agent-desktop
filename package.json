@@ -21,7 +21,8 @@
     "rebuild:native": "electron-rebuild -f -w node-pty -v 45.1.0",
     "postinstall": "npm run rebuild:native",
     "evolution": "electron out/main/evolution-admin.js",
-    "strategy:lab": "electron out/main/strategy-lab.js"
+    "strategy:lab": "electron out/main/strategy-lab.js",
+    "acceptance:workspace": "npm run build && node scripts/acceptance/run-workspace.cjs && node scripts/acceptance/run-workspace.cjs --production"
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.81",

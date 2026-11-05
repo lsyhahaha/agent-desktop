@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  OpenWorkspaceFile, FileOpenReply,
   TerminalCommand,
   TerminalSnapshot,
   TerminalReply,
@@ -218,6 +219,7 @@ const bridge: DesktopBridge = Object.freeze({
     if (incompatible) throw new Error(mismatch);
     return value;
   },
+  openWorkspaceFile: (value: unknown) => invoke("workspace", channels.fileOpen, FileOpenReply, validate(OpenWorkspaceFile, value, "workspace", true)),
   selectWorkspace: () =>
     invoke("workspace", channels.workspace, WorkspaceSelection),
 });

@@ -1,0 +1,37 @@
+{
+  "mode": "controlled",
+  "replaced": [
+    "Provider",
+    "desktop bridge",
+    "PTY",
+    "clipboard"
+  ],
+  "checks": [
+    "project draft isolation",
+    "SQLite body search and run identity",
+    "project recent restore and no-project restore",
+    "project pagination, nonempty draft preservation and body search across pages",
+    "Git mixed-index and untracked content, traversal denied",
+    "Git deletion and binary untracked rejection",
+    "nested untracked files listed and readable",
+    "Git content query cannot bypass protected runtime directory",
+    "draft cold restore",
+    "v6 to v7 migration preserves history and defaults absent draft",
+    "real renderer plain reply, folded model, restored draft",
+    "default and minimum renderer screenshots captured",
+    "minimum send reachability, no document overflow, code copy entry",
+    "code copy exact text through controlled clipboard",
+    "IME composing shortcut does not send",
+    "execution disclosure survives authoritative snapshot refresh",
+    "real change-panel rendering",
+    "terminal view switching does not request another PTY",
+    "relative file reference locates existing same-run read record",
+    "approval visible, full command copy, active project switch denied, refusal retained",
+    "pending approval cancellation settles without command execution",
+    "composer locked during delayed draft send and late debounce cannot resurrect sent text",
+    "non-Git scope fallback and project navigation restore",
+    "SQLite draft write failure retains confirmed draft and reports storage error"
+  ],
+  "temp": "/private/var/folders/lz/vl8wmj8n1m5_80s8fyg94bvw0000gn/T/workspace-ui-8QnoHR",
+  "status": "passed"
+}

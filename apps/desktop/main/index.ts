@@ -11,6 +11,7 @@ import {
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, basename } from "node:path";
 import {
+  OpenWorkspaceFile,
   TerminalCommand,
   channels,
   DesktopStatus,
@@ -20,6 +21,7 @@ import {
   ClientDiagnostic,
   DIAGNOSTIC_PREFIX,
 } from "@protocol";
+import { workspacePath, protectRuntimeDirectory } from "../../runtime/src/workspace-path";
 import { Settings } from "./settings";
 import { realpath } from "node:fs/promises";
 import { userInfo } from "node:os";
@@ -210,6 +212,24 @@ if (!app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
       );
       session.defaultSession.setPermissionCheckHandler(() => false);
       await settings.load();
+      protectRuntimeDirectory(app.getPath("userData"));
+      // 路径和会话双重校验；仅显式点击后交给系统文本文件处理程序。
+      ipcMain.handle(channels.fileOpen, async (event, raw: unknown) => {
+        assertSender(event);
+        const input = OpenWorkspaceFile.parse(raw);
+        const current = await runtime.chat({type: "snapshot"});
+        if (!selectedRoot || current.sessionId !== input.sessionId || current.workspace?.path !== selectedRoot) throw new Error("工作区已变化");
+        if (!/\.(txt|md|ts|tsx|js|jsx|json|css|scss|html|py|rs|go|java|c|h|cpp|yaml|yml|toml)$/i.test(input.path)) throw new Error("仅支持打开已知文本源码类型");
+        const checked = await workspacePath(selectedRoot!, input.path, AbortSignal.timeout(5000));
+        if (!checked.stat.isFile() || checked.stat.nlink !== 1) throw new Error("仅支持普通文件");
+        await checked.verify();
+        const latest = await runtime.chat({type: "snapshot"});
+        if (latest.sessionId !== input.sessionId || selectedRoot !== latest.workspace?.path) throw new Error("工作区已变化");
+        await checked.verify();
+        const error = await shell.openPath(checked.target);
+        if (error) throw new Error("系统未能打开文件");
+        return {opened: true};
+      });
       runtime.start(
         join(app.getPath("userData"), "storage", "sessions.sqlite"),
       );

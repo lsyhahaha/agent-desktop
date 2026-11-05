@@ -148,15 +148,15 @@ export class SessionStore {
     const value = await this.request({ op: "selected" });
     return value === null ? null : SessionMeta.parse(value);
   }
-  async draft() {
-    const value = await this.request({ op: "draft" });
+  async draft(workspace?: import("@protocol").WorkspaceSelection) {
+    const value = await this.request({ op: "draft", workspace });
     return value === null ? null : SessionMeta.parse(value);
   }
   async load(id: string) {
     return LoadedSession.parse(await this.request({ op: "load", id }));
   }
-  async page(page: number) {
-    return SessionPage.parse(await this.request({ op: "page", page }));
+  async page(page: number, workspace?: import("@protocol").WorkspaceSelection, query?: string) {
+    return SessionPage.parse(await this.request({ op: "page", page, workspace, query }));
   }
   async inspect(sessionId: string, runId: string) {
     return RunInspection.parse(

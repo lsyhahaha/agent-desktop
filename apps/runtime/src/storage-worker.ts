@@ -83,7 +83,7 @@ else if (
   version !== 3 &&
   version !== 4 &&
   version !== 5 &&
-  version !== 6
+  version !== 6 && version !== 7
 )
   throw new Error("Unsupported database schema version");
 // v1旧轮次保留空版本，不从工具摘要伪造完整执行历史。
@@ -121,6 +121,12 @@ if (Number(version) <= 5)
  PRAGMA user_version=6;
 `),
   );
+// 草稿使用独立表，不改变已存消息，也不把空任务草稿迁入模型历史。
+if (Number(version) <= 6) transaction(() => db.exec(`
+ CREATE TABLE project_navigation(project_path TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE) STRICT;
+ CREATE TABLE session_drafts(session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, text TEXT NOT NULL) STRICT;
+ PRAGMA user_version=7;
+`));
 // v3仅多了已停用的日志表；保留现有数据，不创建、不查询、不清空这些表。
 protectRuntimeDirectory(dirname(path));
 
@@ -158,6 +164,8 @@ function saveMeta(meta: SessionMeta) {
     meta.updatedAt,
     meta.permissionMode,
   );
+  // 每次激活/保存记录该项目最后访问会话，与内容更新时间分开。
+  db.prepare("INSERT INTO project_navigation VALUES (?,?) ON CONFLICT(project_path) DO UPDATE SET session_id=excluded.session_id").run(meta.workspace?.path ?? "",meta.id);
 }
 function auditRows(runId: string) {
   return db
@@ -586,9 +594,25 @@ parentPort!.on("message", async (raw: unknown) => {
         };
         break;
       }
+      case "save_draft":
+        if (!db.prepare("SELECT id FROM sessions WHERE id=?").get(request.sessionId)) throw new RecordNotFound("Session missing");
+        db.prepare("INSERT INTO session_drafts VALUES (?,?) ON CONFLICT(session_id) DO UPDATE SET text=excluded.text").run(request.sessionId, request.text);
+        value = null;
+        break;
+      case "get_draft":
+        value = db.prepare("SELECT text FROM session_drafts WHERE session_id=?").get(request.sessionId)?.text ?? "";
+        if (typeof value !== "string" || value.length > 16000) throw new Error("Invalid stored draft");
+        break;
       case "recover":
         value = await recover();
         break;
+      case "project_recent": {
+        const remembered = db.prepare("SELECT session_id FROM project_navigation WHERE project_path=?").get(request.workspace?.path ?? "");
+        const rememberedRow = remembered ? db.prepare("SELECT * FROM sessions WHERE id=? AND json_extract(workspace_json,'$.path') IS ?").get(remembered.session_id, request.workspace?.path ?? null) : undefined;
+        const row = rememberedRow ?? db.prepare("SELECT * FROM sessions WHERE json_extract(workspace_json,'$.path') IS ? ORDER BY updated_at DESC,id DESC LIMIT 1").get(request.workspace?.path ?? null);
+        value = row ? metaOf(row) : null;
+        break;
+      }
       case "selected":
       case "draft": {
         const row =
@@ -596,9 +620,9 @@ parentPort!.on("message", async (raw: unknown) => {
             ? db.prepare("SELECT * FROM sessions WHERE selected=1").get()
             : db
                 .prepare(
-                  "SELECT * FROM sessions WHERE NOT EXISTS(SELECT 1 FROM runs WHERE session_id=sessions.id) ORDER BY created_at DESC LIMIT 1",
+                  "SELECT * FROM sessions WHERE NOT EXISTS(SELECT 1 FROM runs WHERE session_id=sessions.id) AND NOT EXISTS(SELECT 1 FROM session_drafts d WHERE d.session_id=sessions.id AND length(d.text)>0) AND json_extract(workspace_json,'$.path') IS ? ORDER BY created_at DESC LIMIT 1",
                 )
-                .get();
+                .get(request.workspace?.path ?? null);
         value = row ? metaOf(row) : null;
         break;
       }
@@ -628,18 +652,28 @@ parentPort!.on("message", async (raw: unknown) => {
       case "page": {
         const rows = db
           .prepare(
-            `SELECT s.*,COALESCE((SELECT state FROM runs WHERE session_id=s.id ORDER BY seq DESC LIMIT 1),'idle') AS state FROM sessions s WHERE EXISTS(SELECT 1 FROM runs WHERE session_id=s.id) ORDER BY updated_at DESC,id DESC LIMIT 21 OFFSET ?`,
+            `SELECT s.*,COALESCE((SELECT state FROM runs WHERE session_id=s.id ORDER BY seq DESC LIMIT 1),'idle') AS state FROM sessions s WHERE (EXISTS(SELECT 1 FROM runs WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM session_drafts d WHERE d.session_id=s.id AND length(d.text)>0))
+             AND (?=1 OR json_extract(s.workspace_json,'$.path') IS ?)
+             AND (?='' OR instr(lower(s.title),lower(?))>0 OR EXISTS(SELECT 1 FROM messages m WHERE m.session_id=s.id AND instr(lower(json_extract(m.data_json,'$.text')),lower(?))>0))
+             ORDER BY updated_at DESC,id DESC LIMIT 21 OFFSET ?`,
           )
-          .all(request.page * 20);
+          .all(request.workspace === undefined ? 1 : 0, request.workspace?.path ?? null,
+            request.query ?? "", request.query ?? "", request.query ?? "", request.page * 20);
         value = {
-          sessions: rows.slice(0, 20).map((row) => ({
+          sessions: rows.slice(0, 20).map((row) => {
+            // 只返回一条命中片段，历史正文留在Worker，限制每页投影大小。
+            const match = request.query ? db.prepare("SELECT run_id, json_extract(data_json,'$.text') AS text FROM messages WHERE session_id=? AND instr(lower(json_extract(data_json,'$.text')),lower(?))>0 ORDER BY rowid LIMIT 1").get(row.id, request.query) : undefined;
+            const body = String(match?.text ?? "");
+            const at = body.toLowerCase().indexOf((request.query ?? "").toLowerCase());
+            return ({
             id: row.id,
             title: row.title,
             state: row.state,
             taskStatus: row.task_status,
             workspaceName: metaOf(row).workspace?.name ?? null,
             updatedAt: row.updated_at,
-          })),
+            ...(match ? { snippet: body.slice(Math.max(0,at-40), Math.max(0,at-40)+240), matchedRunId: match.run_id } : {}),
+          }); }),
           hasMore: rows.length > 20,
         };
         break;

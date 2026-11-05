@@ -11,6 +11,13 @@ import { ToolRecords } from "./ToolRecords";
 import { ModelSettingsPage } from "./ModelSettingsPage";
 import { useAgentSession } from "./useAgentSession";
 
+/** 分组以本机自然日为界，跨月和夏令时仍按日期判断。 */
+function dayGroup(time: number) {
+  const now = new Date(), day = new Date(time);
+  if (day.toDateString() === now.toDateString()) return "今天";
+  now.setDate(now.getDate() - 1);
+  return day.toDateString() === now.toDateString() ? "昨天" : "更早";
+}
 const runLabels = {
   queued: "任务已接纳",
   waiting_input: "等待你的回答",
@@ -29,7 +36,9 @@ export function App() {
   const agent = useAgentSession();
   const [developerOpen, setDeveloperOpen] = useState(false),
     [developerMax, setDeveloperMax] = useState(false),
-    [developerWidth, setDeveloperWidth] = useState(420);
+    [developerWidth, setDeveloperWidth] = useState(() => {
+      try { const width = Number(localStorage.getItem("workspace-panel-width")); return width >= 320 && width <= 2000 ? width : 420; } catch { return 420; }
+    });
   const developerTrigger = useRef<HTMLButtonElement>(null);
   const columns = useRef<HTMLDivElement>(null),
     resizing = useRef(false);
@@ -64,24 +73,52 @@ export function App() {
   const settingsMenu = useRef<HTMLDivElement>(null);
   const settingsTrigger = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState("");
+  // 外观偏好与业务草稿分开；此处只保存显示设置，失败不会阻断发送。
+  const [wide, setWide] = useState(() => {
+    try { return localStorage.getItem("workspace-reading-wide") === "true"; } catch { return false; }
+  });
+  const [layoutError, setLayoutError] = useState("");
+  useEffect(() => {
+    try { localStorage.setItem("workspace-reading-wide", String(wide)); localStorage.setItem("workspace-panel-width", String(developerWidth)); }
+    catch { setLayoutError("布局已调整，但无法记住本机偏好。"); }
+  }, [wide, developerWidth]);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const [searching, setSearching] = useState(false),
     [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null),
     [title, setTitle] = useState("");
-  const drafts = useRef(new Map<string, string>());
   const composer = useRef<HTMLTextAreaElement>(null);
   // 草稿按会话隔离，切换只改变显示，不丢弃旧任务或把草稿写进模型上下文。
   useEffect(() => {
-    setText(drafts.current.get(agent.sessionId ?? "") ?? "");
+    setText(agent.draft);
     setExpandedRun(null);
     follow.current = true;
     setAwayFromLatest(false);
   }, [agent.sessionId]);
+  // 保存请求串行发送；切换和发送前等待最后一份草稿确认，防止迟到回包清空新输入。
+  const draftWrites = useRef(Promise.resolve(true));
+  const transitioning = useRef(false);
+  const [draftError, setDraftError] = useState("");
+  function persistDraft(value = text) {
+    const sessionId = agent.sessionId;
+    if (!sessionId) return Promise.resolve(false);
+    const write = draftWrites.current.then(async () => {
+      const ok = await agent.command({ type: "save_draft", sessionId, text: value });
+      setDraftError(ok ? "" : "草稿尚未保存，请保留当前窗口并重试。");
+      return ok;
+    });
+    draftWrites.current = write;
+    return write;
+  }
+  useEffect(() => {
+    if (clearing || !agent.sessionId || text === agent.draft) return;
+    const timer = setTimeout(() => void persistDraft(text), 500);
+    return () => clearTimeout(timer);
+  }, [text, agent.sessionId, clearing]);
   function changeText(value: string) {
     setText(value);
-    if (agent.sessionId) drafts.current.set(agent.sessionId, value);
   }
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
@@ -92,40 +129,57 @@ export function App() {
     if (follow.current && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
   }, [agent.chat?.revision, agent.sessionId, page]);
-  async function send() {
-    if (await agent.send(text)) {
-      changeText("");
-      follow.current = true;
-    }
-  }
-  /** 新任务创建/复用独立草稿，旧任务由 Runtime 保留，不再调用 clear。 */
-  async function newChat() {
-    if (agent.active || agent.pending || clearing) return;
+  /** 保存与导航共用过渡锁。锁定期间禁止继续编辑，取消旧的延迟保存，
+   * 避免已经发送的旧草稿在清空确认后被迟到写入重新恢复。 */
+  async function withSavedDraft(action: () => Promise<void>) {
+    if (transitioning.current || agent.active || agent.pending || agent.choosing) return;
+    transitioning.current = true;
     setClearing(true);
     try {
-      if (await agent.command({ type: "new" })) {
-        setPage("chat");
-        setEditing(null);
-        setQuery("");
-        follow.current = true;
-        composer.current?.focus();
-      }
+      if (await persistDraft()) await action();
     } finally {
+      transitioning.current = false;
       setClearing(false);
     }
+  }
+  async function send() {
+    await withSavedDraft(async () => {
+      if (await agent.send(text)) {
+        if (await persistDraft("")) changeText("");
+        follow.current = true;
+      }
+    });
+  }
+  /** 新任务创建/复用独立草稿，旧任务由Runtime保留。 */
+  async function newChat() {
+    await withSavedDraft(async () => {
+      if (await agent.command({ type: "new" })) {
+        setPage("chat"); setEditing(null); setQuery("");
+        follow.current = true;
+        requestAnimationFrame(() => composer.current?.focus());
+      }
+    });
   }
   async function selectTask(id: string) {
-    if (agent.active || agent.pending || clearing) return;
-    setClearing(true);
-    try {
+    await withSavedDraft(async () => {
+      const match = agent.sessions.find((item) => item.id === id);
       if (await agent.command({ type: "select", sessionId: id })) {
-        setPage("chat");
-        setEditing(null);
-        follow.current = true;
+        if (match?.matchedRunId) {
+          await agent.command({ type: "inspect_run", sessionId: id, runId: match.matchedRunId });
+          setExpandedRun(match.matchedRunId);
+          follow.current = false;
+          setAwayFromLatest(true);
+          requestAnimationFrame(() => document.querySelector(`[data-minimap-round="${match.matchedRunId}"]`)?.scrollIntoView({block: "center"}));
+        } else follow.current = true;
+        setPage("chat"); setEditing(null);
       }
-    } finally {
-      setClearing(false);
-    }
+    });
+  }
+  async function chooseWorkspace() {
+    await withSavedDraft(async () => { await agent.choose(); });
+  }
+  async function noProject() {
+    await withSavedDraft(async () => { await agent.command({type: "no_project"}); });
   }
   async function renameTask() {
     if (!editing || !title.trim() || agent.active || agent.pending) return;
@@ -202,13 +256,23 @@ export function App() {
               : !text.trim()
                 ? "输入消息后发送（⌘ / Ctrl + Enter）"
                 : "发送消息（⌘ / Ctrl + Enter）";
-  const shownTasks = agent.sessions.filter((item) =>
-    item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-  );
+  // 搜索交给SQLite分页，避免把全量会话正文搬到renderer。
+  const lastSearch = useRef("");
+  useEffect(() => {
+    const key = `${agent.sessionId}:${query}`;
+    if (agent.active || agent.pending || lastSearch.current === key) return;
+    const timer = setTimeout(() => {
+      lastSearch.current = key;
+      void agent.command({type: "list_sessions", page: 0, query});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, agent.sessionId, agent.active, agent.pending]);
+  const shownTasks = agent.sessions;
   return (
     <div
       className={
-        "desktop-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")
+        "desktop-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "") +
+        (wide ? " reading-wide" : "") + (composerExpanded ? " composer-expanded" : "")
       }
     >
       {/* 应用工具拥有独立布局行；隐藏导航后仍可访问，不覆盖聊天或终端。 */}
@@ -324,14 +388,43 @@ export function App() {
             >
               <span>⊕</span> 新建任务<kbd>⌘ N</kbd>
             </button>
+            <div className="sidebar-context">
+              <span className="group-label">当前项目</span>
+              <button className="no-project" disabled={agent.active || agent.pending}
+                onClick={() => void noProject()}>无项目对话</button>
+              <button
+                className="workspace-link"
+                onClick={() => void chooseWorkspace()}
+                disabled={
+                  !!agent.connectionError ||
+                  agent.active ||
+                  agent.pending ||
+                  agent.choosing
+                }
+              >
+                <span>▱</span>
+                <span>
+                  {agent.choosing
+                    ? "正在选择…"
+                    : (agent.workspace?.name ?? "选择项目目录")}
+                </span>
+              </button>
+              <p>
+                {agent.storageError
+                  ? "本地保存异常"
+                  : agent.connectionError
+                    ? "历史记录尚未加载"
+                    : "任务保存在本机"}
+              </p>
+            </div>
             <div className="sidebar-divider" />
             <div className="group-label nav-label task-list-heading">
               <span>
                 任务列表 <span className="count">{agent.sessions.length}</span>
               </span>
               <button
-                aria-label="搜索当前页任务"
-                title="搜索当前页任务"
+                aria-label="搜索项目任务"
+                title="搜索项目任务"
                 onClick={() => {
                   setSearching(!searching);
                   setQuery("");
@@ -343,10 +436,11 @@ export function App() {
             {searching && (
               <input
                 className="task-search"
-                aria-label="搜索当前页任务名称"
+                maxLength={200}
+                aria-label="搜索项目任务与对话"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索当前页任务名称"
+                placeholder="搜索项目任务与对话"
                 autoFocus
               />
             )}
@@ -356,7 +450,10 @@ export function App() {
                   {query ? "没有匹配的任务" : "发送第一条消息后显示任务"}
                 </p>
               ) : (
-                shownTasks.map((item) => (
+                shownTasks.map((item, index) => (
+                  <section key={item.id} className="task-entry">
+                    {(index === 0 || dayGroup(item.updatedAt) !== dayGroup(shownTasks[index - 1].updatedAt)) &&
+                      <div className="task-day-group">{dayGroup(item.updatedAt)}</div>}
                   <div
                     className={
                       "task-row " +
@@ -422,7 +519,7 @@ export function App() {
                                 : "")
                             }
                           />
-                          <span>{item.title}</span>
+                          <span>{item.title}<small className="task-updated">{new Date(item.updatedAt).toLocaleString(undefined, {month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit"})}</small>{item.snippet && <small className="task-snippet">{item.snippet}</small>}</span>
                         </button>
                         <button
                           className="task-more"
@@ -439,6 +536,7 @@ export function App() {
                       </>
                     )}
                   </div>
+                  </section>
                 ))
               )}
             </div>
@@ -471,33 +569,7 @@ export function App() {
                 下一页
               </button>
             </div>
-            <div className="sidebar-context">
-              <span className="group-label">项目</span>
-              <button
-                className="workspace-link"
-                onClick={() => void agent.choose()}
-                disabled={
-                  !!agent.connectionError ||
-                  agent.active ||
-                  agent.pending ||
-                  agent.choosing
-                }
-              >
-                <span>▱</span>
-                <span>
-                  {agent.choosing
-                    ? "正在选择…"
-                    : (agent.workspace?.name ?? "选择项目目录")}
-                </span>
-              </button>
-              <p>
-                {agent.storageError
-                  ? "本地保存异常"
-                  : agent.connectionError
-                    ? "历史记录尚未加载"
-                    : "任务保存在本机"}
-              </p>
-            </div>
+
           </>
         )}
         <div className="sidebar-bottom">
@@ -530,6 +602,8 @@ export function App() {
           hidden={developerOpen && developerMax}
         >
           <header className="workspace-header">
+            <button className="reading-width" aria-pressed={wide}
+              onClick={() => setWide(!wide)}>{wide ? "标准宽度" : "宽幅阅读"}</button>
             <div className="window-drag header-drag" />
 
             <span>
@@ -770,7 +844,7 @@ export function App() {
                           本轮已停止。未完成的输出不会加入后续模型上下文。
                         </p>
                       )}
-                      {agent.chat?.state === "completed" && (
+                      {agent.chat?.state === "completed" && !agent.chat.items.length && (
                         <div
                           className="usage"
                           data-minimap-round={agent.chat?.runId ?? undefined}
@@ -813,6 +887,11 @@ export function App() {
                 )}
               </div>
               <div className="compose-area">
+                {!text && ["failed", "cancelled", "interrupted"].includes(agent.chat?.state ?? "") &&
+                  <button onClick={() => changeText(agent.chat?.messages.filter((message) => message.role === "user").at(-1)?.text ?? "")}>取回上次输入继续编辑</button>}
+                {layoutError && <p role="alert" className="error">{layoutError}</p>}
+                {draftError && <p role="alert" className="error">{draftError}</p>}
+                {text !== agent.draft && !draftError && <small className="draft-save-state">草稿正在保存…</small>}
                 {(agent.error || agent.storageError || agent.chat?.error) && (
                   <div role="alert" className="error">
                     {agent.error ||
@@ -843,7 +922,7 @@ export function App() {
                           agent.pending ||
                           agent.choosing
                         }
-                        onClick={() => void agent.choose()}
+                        onClick={() => void chooseWorkspace()}
                       >
                         <svg
                           width="16"
@@ -887,7 +966,7 @@ export function App() {
                       value={text}
                       maxLength={16000}
                       disabled={
-                        agent.active || agent.pending || !agent.settingsReady
+                        clearing || agent.active || agent.pending || !agent.settingsReady || !agent.sessionId
                       }
                       onChange={(e) => changeText(e.target.value)}
                       placeholder={
@@ -909,6 +988,10 @@ export function App() {
                       }}
                     />
                     <div className="composer-toolbar">
+                      <button className="composer-expand" aria-expanded={composerExpanded}
+                        onClick={() => { setComposerExpanded(!composerExpanded); composer.current?.focus(); }}>
+                        {composerExpanded ? "收起编辑区" : "展开编辑区"}
+                      </button>
                       {/* 内置工具由 Runtime 决定，输入框不再暴露工具实现开关。 */}
                       <PermissionPicker
                         mode={agent.permissionMode}
@@ -959,7 +1042,7 @@ export function App() {
                               aria-label="发送消息"
                               className="send-button"
                               disabled={
-                                agent.pending ||
+                                clearing || agent.pending ||
                                 !!agent.storageError ||
                                 !!agent.connectionError ||
                                 !text.trim() ||
@@ -995,13 +1078,14 @@ export function App() {
               {empty && (
                 <div className="suggestions">
                   <span>试试这些任务</span>
+                  <button disabled={agent.active || !agent.workspace} onClick={() => changeText("请检查当前项目的暂存、未暂存和新增文件，概括改动与待验证事项。")}>⌘<span>检查当前改动</span><span>↗</span></button>
                   <button
                     disabled={agent.active}
                     onClick={() =>
-                      changeText("请介绍一下你能如何协助我理解一个代码项目。")
+                      changeText("请帮我分析以下报错，定位原因并说明验证方法。\n\n")
                     }
                   >
-                    ✧<span>一起梳理一个项目的思路</span>
+                    ✧<span>分析一段报错</span>
                     <span>↗</span>
                   </button>
                   <button
@@ -1015,7 +1099,7 @@ export function App() {
                       changeText("请读取 README.md，说明项目用途和启动方式。");
                     }}
                   >
-                    ▤<span>读取 README，了解项目如何启动</span>
+                    ▤<span>了解这个项目</span>
                     <span>↗</span>
                   </button>
                 </div>
@@ -1073,6 +1157,10 @@ export function App() {
               onCollapse={closeDeveloper}
               maximized={developerMax}
               onMaximize={() => setDeveloperMax(!developerMax)}
+              changes={agent.changes}
+              items={agent.chat?.items}
+              busy={agent.active}
+              onRefresh={(path) => agent.sessionId ? agent.command({ type: "workspace_changes", sessionId: agent.sessionId, path }) : Promise.resolve(false)}
             />
           </>
         )}

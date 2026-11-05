@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "checks": [
+    "production handshake, native selection and draft isolation",
+    "production file-open route and stale-session/traversal/executable denial",
+    "production no-project draft restore"
+  ],
+  "mode": "controlled",
+  "replaced": [
+    "native folder picker",
+    "system openPath"
+  ],
+  "temp": "/private/var/folders/lz/vl8wmj8n1m5_80s8fyg94bvw0000gn/T/workspace-main-J2Ax61"
+}

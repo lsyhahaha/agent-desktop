@@ -14,7 +14,7 @@ export const RUNTIME_DIGEST =
     : "unbundled-source";
 export const BUILD_ID =
   typeof __APP_BUILD_ID__ === "string" ? __APP_BUILD_ID__ : "unbundled-source";
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 const buildIdentity = {
   protocolVersion: z.literal(PROTOCOL_VERSION),
   buildId: z.literal(BUILD_ID),
@@ -67,6 +67,7 @@ export function validationFields(error: { issues: { path: PropertyKey[] }[] }) {
 export const channels = {
   status: "desktop:status",
   workspace: "desktop:select-workspace",
+  fileOpen: "desktop:open-workspace-file",
   settingsGet: "model:settings",
   settingsSave: "model:save",
   chat: "chat:command",
@@ -97,7 +98,11 @@ export const WorkspaceSelection = z
   .nullable();
 export type DesktopStatus = z.infer<typeof DesktopStatus>;
 export type WorkspaceSelection = z.infer<typeof WorkspaceSelection>;
+/** 只打开当前授权工作区内的文本文件，不接收URL、应用或Shell参数。 */
+export const OpenWorkspaceFile = z.object({ sessionId: z.string().uuid(), path: z.string().min(1).max(1024) }).strict();
+export const FileOpenReply = z.object({ opened: z.literal(true) }).strict();
 export interface DesktopBridge {
+  openWorkspaceFile(value: z.infer<typeof OpenWorkspaceFile>): Promise<z.infer<typeof FileOpenReply>>;
   terminal(value: import("./terminal").TerminalCommand): Promise<{
     terminal: import("./terminal").TerminalSnapshot | null;
     terminals?: import("./terminal").TerminalTab[];
@@ -133,6 +138,9 @@ export const SaveSettings = z
   })
   .strict();
 export const ChatCommand = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("workspace_changes"), sessionId: z.string().uuid(), path: z.string().min(1).max(1024).optional() }).strict(),
+  // 草稿只属于当前会话，不会进入模型上下文。
+  z.object({ type: z.literal("save_draft"), sessionId: z.string().uuid(), text: z.string().max(16000) }).strict(),
   AcceptanceEdit.extend({ type: z.literal("edit_acceptance") }).strict(),
   z
     .object({
@@ -144,6 +152,7 @@ export const ChatCommand = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("list_sessions"),
+      query: z.string().trim().max(200).optional(),
       page: z.number().int().min(0).max(100000),
     })
     .strict(),
@@ -180,6 +189,7 @@ export const ChatCommand = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("clear") }).strict(),
   z.object({ type: z.literal("new") }).strict(),
+  z.object({ type: z.literal("no_project") }).strict(),
   z
     .object({ type: z.literal("complete_task"), sessionId: z.string().uuid() })
     .strict(),
@@ -335,6 +345,8 @@ export const SessionSnapshot = z
     taskStatus: z.enum(["open", "completed"]),
     workspace: WorkspaceSelection,
     title: z.string().min(1).max(60),
+    changes: z.object({ git: z.boolean(), capturedAt: z.number(), files: z.array(z.object({ path: z.string().max(4096), index: z.string().length(1), worktree: z.string().length(1) }).strict()).max(200), detail: z.string().max(65536) }).strict().optional(),
+    draft: z.string().max(16000).optional(),
     sessionPage: z.number().int().nonnegative(),
     hasMoreSessions: z.boolean(),
     storageError: z.string().nullable(),
@@ -350,6 +362,8 @@ export const SessionSnapshot = z
             state: ChatSnapshot.shape.state,
             taskStatus: z.enum(["open", "completed"]),
             workspaceName: z.string().nullable(),
+            snippet: z.string().max(240).optional(),
+            matchedRunId: z.string().uuid().optional(),
             updatedAt: z.number(),
           })
           .strict(),

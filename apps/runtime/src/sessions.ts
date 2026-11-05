@@ -1,4 +1,5 @@
 import { nullRunLog, type RuntimeLogs } from "./runtime-log";
+import { workspaceChanges } from "./workspace-changes";
 import { randomUUID } from "node:crypto";
 import { realpath, access } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -13,7 +14,7 @@ import {
 import type { z } from "zod";
 import { Agent } from "./agent";
 import { SessionStore } from "./storage";
-import type { SessionMeta } from "./storage-types";
+import { SessionMeta } from "./storage-types";
 
 type Entry = { meta: SessionMeta; agent: Agent; runs: SessionSnapshot["runs"] };
 /** 数据库保留全部会话，内存只加载当前Agent和20条索引；单个时刻仍只运行一个任务。 */
@@ -21,6 +22,9 @@ export class Sessions {
   private entry: Entry | undefined;
   private revision = 0;
   private page = 0;
+  private query = "";
+  private draftText = "";
+  private changes: SessionSnapshot["changes"];
   private summaries: SessionSnapshot["sessions"] = [];
   private hasMore = false;
   private inspected: SessionSnapshot["inspectedRun"] = null;
@@ -106,6 +110,8 @@ export class Sessions {
         this.logs?.run(entry.meta.id, runId, secrets) ?? nullRunLog,
     );
     entry.agent.restore(loaded.chat, loaded.history);
+    this.draftText = String(await this.store.request({ op: "get_draft", sessionId: meta.id }));
+    this.changes = undefined;
     this.entry = entry;
     this.inspected = null;
   }
@@ -121,7 +127,7 @@ export class Sessions {
     }
   }
   private async refresh() {
-    const data = await this.store.page(this.page);
+    const data = await this.store.page(this.page, this.current().meta.workspace, this.query);
     this.summaries = data.sessions;
     this.hasMore = data.hasMore;
     if (this.entry) this.updateSummary(this.entry);
@@ -135,6 +141,8 @@ export class Sessions {
       taskStatus: entry.meta.taskStatus,
       permissionMode: entry.meta.permissionMode,
       workspace: entry.meta.workspace,
+      changes: this.changes,
+      draft: this.draftText,
       sessionPage: this.page,
       hasMoreSessions: this.hasMore,
       storageError: this.storageError,
@@ -167,6 +175,20 @@ export class Sessions {
       return this.snapshot();
     }
     if (this.storageError) throw new Error(this.storageError);
+    if (cmd.type === "save_draft") {
+      if (cmd.sessionId !== current.meta.id) throw new Error("会话已切换，草稿尚未保存");
+      await this.store.request({ op: "save_draft", sessionId: cmd.sessionId, text: cmd.text });
+      this.draftText = cmd.text;
+      await this.refresh();
+      this.publish();
+      return this.snapshot();
+    }
+    if (cmd.type === "workspace_changes") {
+      if (cmd.sessionId !== current.meta.id || !current.meta.workspace) throw new Error("请先选择项目");
+      if (current.agent.busy()) throw new Error("请等待执行结束后刷新改动");
+      this.changes = await workspaceChanges(current.meta.workspace.path, cmd.path);
+      this.publish(); return this.snapshot();
+    }
     if (cmd.type === "inspect_run") {
       if (cmd.sessionId !== current.meta.id) throw new Error("会话已切换");
       this.inspected =
@@ -217,12 +239,24 @@ export class Sessions {
     }
     if (cmd.type === "list_sessions") {
       this.page = cmd.page;
+      if (cmd.query !== undefined) this.query = cmd.query;
       await this.refresh();
       this.publish();
       return this.snapshot();
     }
-    if (cmd.type === "new") {
-      const draft = await this.store.draft();
+    if (cmd.type === "new" || cmd.type === "no_project") {
+      if (cmd.type === "no_project") workspace = null;
+      // Main原生项目选择携带workspace，优先恢复该项目最近任务。
+      const target = workspace === undefined ? current.meta.workspace : workspace;
+      if (workspace !== undefined) {
+        const recent = await this.store.request({ op: "project_recent", workspace });
+        if (recent) {
+          await this.activate(SessionMeta.parse(recent));
+          this.page = 0; this.query = "";
+          await this.refresh(); this.publish(); return this.snapshot();
+        }
+      }
+      const draft = await this.store.draft(target);
       const meta =
         draft ??
         this.makeMeta(
@@ -240,6 +274,8 @@ export class Sessions {
     if (cmd.type === "select") {
       const loaded = await this.store.load(cmd.sessionId);
       await this.activate(loaded.meta);
+      this.page = 0; this.query = "";
+      await this.refresh();
       this.publish();
       return this.snapshot();
     }
@@ -302,7 +338,7 @@ export class Sessions {
       current.meta.taskStatus = "open";
       current.meta.updatedAt = Date.now();
       if (!current.meta.customTitle && !current.agent.snapshot.messages.length)
-        current.meta.title = cmd.text.split("\n")[0].slice(0, 32) || "新任务";
+        current.meta.title = Array.from(cmd.text.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "新任务").slice(0, 32).join("");
       await current.agent.command(cmd, {
         ...context,
         permissionMode: context.evaluationOnly

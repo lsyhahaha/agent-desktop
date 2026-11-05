@@ -110,6 +110,8 @@ export const SessionPage = z
             state: ChatSnapshot.shape.state,
             taskStatus: z.enum(["open", "completed"]),
             workspaceName: z.string().nullable(),
+            snippet: z.string().max(240).optional(),
+            matchedRunId: z.string().uuid().optional(),
             updatedAt: z.number(),
           })
           .strict(),
@@ -173,15 +175,20 @@ export const StorageRequest = z.discriminatedUnion("op", [
     })
     .strict(),
   AcceptanceEdit.extend({ op: z.literal("edit_acceptance") }).strict(),
+  z.object({ op: z.literal("save_draft"), sessionId: z.string().uuid(), text: z.string().max(16000) }).strict(),
+  z.object({ op: z.literal("get_draft"), sessionId: z.string().uuid() }).strict(),
   z.object({ op: z.literal("recover") }).strict(),
   z.object({ op: z.literal("selected") }).strict(),
-  z.object({ op: z.literal("draft") }).strict(),
+  z.object({ op: z.literal("draft"), workspace: WorkspaceSelection.optional() }).strict(),
+  z.object({ op: z.literal("project_recent"), workspace: WorkspaceSelection }).strict(),
   z.object({ op: z.literal("meta"), meta: SessionMeta }).strict(),
   z.object({ op: z.literal("rename"), meta: SessionMeta }).strict(),
   z.object({ op: z.literal("load"), id: z.string().uuid() }).strict(),
   z
     .object({
       op: z.literal("page"),
+      workspace: WorkspaceSelection.optional(),
+      query: z.string().trim().max(200).optional(),
       page: z.number().int().min(0).max(100000),
     })
     .strict(),

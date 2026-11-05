@@ -128,7 +128,7 @@ export function useAgentSession() {
     value: Parameters<typeof window.desktop.chat>[0],
   ): Promise<boolean> {
     const switching = [
-      "new",
+      "new", "no_project",
       "select",
       "rename",
       "clear",
@@ -190,6 +190,8 @@ export function useAgentSession() {
   return {
     status,
     connectionError,
+    changes: state?.changes,
+    draft: state?.draft ?? "",
     title: state?.title ?? "新任务",
     sessionPage: state?.sessionPage ?? 0,
     hasMoreSessions: state?.hasMoreSessions ?? false,

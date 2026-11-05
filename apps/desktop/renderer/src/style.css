@@ -1626,3 +1626,57 @@ textarea {
 .timeline-group > section { margin-left: 16px; }
 .timeline-group > section > ol { list-style: none; padding-left: 12px; }
 .timeline-group > details > summary { cursor: pointer; padding: 6px 0; }
+
+/* 工作区阅读层级：回复优先，审计按需展开，焦点与失败状态保持可见。 */
+.type-message { grid-template-columns: minmax(0, 1fr); }
+.type-message > .timeline-icon { display: none; }
+.timeline-prose { font-weight: 400; }
+.routine-execution > summary, .run-options > summary { cursor: pointer; color: var(--text-muted); font-size: 12px; padding: 8px 0; }
+.run-options .acceptance-panel { margin-block: 8px; }
+.markdown-reply { position: relative; }
+.copy-text { font-size: 11px; color: var(--text-muted); padding: 5px 8px; border-radius: 5px; }
+.markdown-reply > .copy-text { opacity: 0; }
+.markdown-reply:hover > .copy-text, .markdown-reply:focus-within > .copy-text { opacity: 1; }
+.reading-wide .conversation-content, .reading-wide .compose-area { max-width: 1120px; }
+.composer-expanded .composer textarea { height: min(35vh, 300px); max-height: 300px; }
+.composer-expand, .reading-width { font-size: 11px; color: var(--text-muted); padding: 5px; }
+.app-brand { margin-bottom: 12px; }
+.sidebar-divider { margin-block: 12px; }
+@media (hover: none) { .markdown-reply > .copy-text { opacity: 1; } }
+
+/* 重要步骤不出现额外折叠标题；任务分组独占一行，操作可用键盘发现。 */
+.routine-execution.is-important > summary { display: none; }
+.task-row { flex-wrap: wrap; }
+.task-day-group { flex-basis: 100%; font-size: 11px; padding: 10px 6px 4px; color: var(--text-muted); }
+.task-updated, .task-snippet { display: block; font-size: 10px; color: var(--text-muted); font-weight: 400; }
+.task-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.task-more { opacity: 0; }
+.task-row:hover .task-more, .task-row:focus-within .task-more { opacity: 1; }
+.sidebar-context { margin-block: 12px; }
+@media (hover: none) { .task-more { opacity: 1; } }
+
+/* 改动查询和PTY各自滚动，隐藏视图不占布局，保留真实终端会话。 */
+.terminal-view { display:flex; flex:1; min-height:0; }
+.terminal-view[hidden] { display:none; }
+.changes-panel { overflow:auto; min-height:0; padding:14px; font-size:12px; }
+.changes-panel pre { overflow:auto; white-space:pre; max-width:100%; }
+.changes-panel ul { padding:0; list-style:none; }
+.changes-panel li button { text-align:left; padding:8px; overflow-wrap:anywhere; }
+.changes-panel small, .changes-panel p { color:var(--text-muted); }
+
+/* 项目导航移到列表上方后采用紧凑尺寸，释放任务列表高度。 */
+.sidebar-context { padding:8px 12px; margin-block:4px; }
+.sidebar-context p { margin:2px 0; }
+.app-brand { padding-bottom:12px; margin-bottom:4px; }
+.sidebar-drag { height:48px; }
+.no-project { display:block; font-size:11px; color:var(--text-muted); padding:5px 0; }
+
+/* 角色标签供读屏使用，视觉正文不重复署名。 */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.code-block { position:relative; }
+.code-block > .copy-text { display:block; margin-left:auto; }
+.task-entry { min-width:0; }
+
+/* 输入组件统一边界，正文与工具栏共享外壳。 */
+.composer { border:0; }
+.compact-run-summary { font-size:12px; color:var(--text-muted); }
