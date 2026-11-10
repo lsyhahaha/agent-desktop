@@ -1,0 +1,82 @@
+{
+  "key": "self-evolution-4-codex-ui-alignment",
+  "projectPath": "/Users/a1111/Desktop/agent-desktop",
+  "title": "自进化第4轮：Codex工作区视觉对齐与可见状态验收",
+  "occurredOn": "2026-11-06",
+  "trigger": "用户要求按优先级将界面特别是工作区对齐Codex，并允许底层未实现能力使用明确Mock；随后要求优先复用组件而非直接堆叠实现。",
+  "baselineCommit": "70e21e2",
+  "changes": [
+    "以官方Codex浅深主界面、插件目录和设置截图为视觉证据，重排侧栏、顶栏、空态、Composer、消息区及浅深主题；Projects补齐逐行标注的禁用Mock密度，并统一New chat/Chats及聊天列表语义。",
+    "新增WorkspacePrimaryNav、SettingsNavigation和ChangeReviewPanel模块，复用既有Tooltip、PermissionPicker、DeveloperPanel和TerminalPanel。",
+    "将终端与改动提升为顶栏双入口；终端使用聊天下方抽屉和专用Terminal/Shell紧凑头；Diff安全渲染、高亮当前文件并展示不污染原文的评论Mock；审阅范围栏将真实全部改动与禁用的Last turn、暂存和main Mock明确分离。",
+    "新增明确禁用的自动化与设置分类Mock；插件目录Mock与真实本地插件管理分离，所有市场、连接和安装操作保持禁用。",
+    "新增可导航的Automations、Appearance、Worktrees/Handoff预览模块；Appearance复用带标签ThemePicker，Handoff与基础卡片分离为居中模态预览，确认保持禁用。",
+    "新增真实SQLite Search工作面，以及Pinned/Archived、Files/Artifact Preview、Skills和Cloud显式Mock；文件树与产物预览固定标题并仅滚动内容，所有副作用操作保持禁用。",
+    "扩展受控验收并保存真实状态截图；截图前清理DOM自动点击遗留的伪键盘焦点，同时保留独立焦点可见性断言，避免为美化证据删除产品可访问样式。",
+    "由受控Provider验证提问、审批、回答与错误恢复；顶栏长审批状态有界省略而完整命令保留在正文；运行态Goal保持禁用Mock，Queue依据官方信息架构新增Composer上方的未发送草稿行，四类副作用操作保持禁用。",
+    "Codex样式限制在codex-aligned作用域；统一本地SVG图标，隐藏滚动条轨迹和静止Minimap但保留滚动与键盘导航；未引入未批准的组件依赖。",
+    "将工作区顶栏收敛为编辑器、Commit、终端、Git统计和面板入口；首次打开自动加载只读文件列表，仅非空Diff生成行数统计，列表阶段保持未知。",
+    "补齐Composer的默认权限、极高推理强度和语音入口，并将环境栏收敛为项目、运行位置和分支三项；默认权限仅概括ask基线，展开菜单保留真实审批边界，未实现入口保持禁用并提供可访问说明。",
+    "将侧栏折叠入口移至标题栏并使用侧栏布局图标；折叠后画布四边铺满整窗，设置收敛为左下32px图标且无残留渐变色带。",
+    "新增与官方基础截图内容同构的浅色空态证据；Composer中的@提示明确标注为Mock，避免用视觉文案冒充未实现能力。",
+    "为Projects与Chats分组补齐筛选和新增入口；真实项目与五个禁用Mock项目复用同一ProjectRow和ProjectFolderIcon，项目与聊天菜单共用原生Popover壳和定位；聊天保留真实重命名并禁用置顶/归档Mock，项目设置/移除禁用Mock，移除平台相关字符字形。",
+    "将空态建议的字符图标替换为与官方一致语义的对话气泡和插件细线SVG，保持原有安全任务填充行为。",
+    "将Composer上下文栏的本地设备与分支字符图标替换为细线SVG，保留真实项目状态和未确认分支边界。",
+    "将侧栏分页控件改为鼠标进入侧栏或键盘聚焦时显现，默认静态界面不再展示Codex没有的页码条。",
+    "提高Pinned条目到官方信息对比度，将Mock收敛为标题小标签，并用细线图钉SVG替换不稳定字符。",
+    "依据官方与本地原始像素重新分配Composer层级；受控验收直接门禁侧栏/Composer比例、纵向位置、96px输入层、深色边框、深浅三层颜色和两套侧栏渐变。",
+    "依据官方Settings补齐页面导航；Profile覆盖累计/峰值Tokens、连续使用、最长任务和Token活动且未知值保持空；Mock不读取私有数据或连接外部服务，真实模型页门禁Key空值/密码类型/关闭自动填充、固定API只读及单一供应商边界。"
+  ],
+  "validations": [
+    {
+      "kind": "build",
+      "result": "npm run build通过，包含TypeScript类型检查；git diff --check通过。现有Zod注释位置警告不影响构建。"
+    },
+    {
+      "kind": "controlled",
+      "result": "npm run acceptance:workspace通过：隔离Sessions/Worker/SQLite/React完成35项受控检查，Provider、desktop bridge、PTY和clipboard为明确替身；Queue未发送草稿位置与禁用操作、Git统计、最小设置页、深色Diff与Minimap均有断言。"
+    },
+    {
+      "kind": "controlled",
+      "result": "生产Main/preload/utility Runtime/Worker完成3项跨进程检查；原生目录选择和系统打开动作使用替身。"
+    },
+    {
+      "kind": "manual",
+      "result": "已实际查看深浅空态、最小窗口、深色Diff、深色审批/提问/错误、设置、插件、Skills、Automations、Appearance、Cloud、Worktrees/Handoff、Search、Archived、文件树和产物预览截图；修正旧帧、环境误报、重复popover ID、Mock空操作、图标和侧栏比例。"
+    },
+    {
+      "kind": "real",
+      "result": "使用最新构建正常启动正式用户实例，通过原生可访问树和实际截图查看工作区、Search、Pinned、设置、Automations、Appearance和Worktrees/Handoff；验证真实zsh终端启动/关闭、改动列表自动读取、DESIGN.md真实Diff和跨终端视图状态保留。项目/聊天菜单增量后再次正常重启，恢复7条会话、当前项目、历史消息和DeepSeek配置，AX确认ProjectRow与最新Composer结构已加载；目录选择器误触后立即取消且未选择目录。未发送消息、调用模型、保存设置或执行Git写操作。"
+    }
+  ],
+  "comparison": null,
+  "limitations": [
+    "正式用户实例已完成工作区、Search、Pinned、设置、Automations、Appearance和Worktrees/Handoff只读走查；Files/Preview、Skills、Cloud只有受控截图，尚未逐页正式走查。",
+    "缺少Queue/Steer、Agent提问和错误恢复的完整官方桌面截图；Queue仅按官方确认的Composer上方位置和四类操作实现，不将未公开的像素细节宣称为有充分证据的复刻。",
+    "插件目录、自动化和多数设置分类为醒目标注且不可操作的Mock；真实能力只有本地插件管理、模型设置、终端和只读改动审阅。",
+    "没有安装lucide-react、Radix或React Aria；依赖引入仍需用户明确批准。",
+    "未执行真实付费模型、跨平台或长期压力验证；真实PTY仅完成单次启动、显示与正常关闭，不代表长期稳定性验证。"
+  ],
+  "evidence": [
+    { "path": "docs/evidence/workspace-ui/controlled.json", "sha256": "aa92bd18da91682d365a0297a4d1aa7b43398e98ca490604d8dcae81e1b8b248" },
+    { "path": "docs/evidence/workspace-ui/production-chain.json", "sha256": "a1ee2ea0c7f9c7c408788065f1f9d25e07a98de2fa21fb376950d1e30152c520" },
+    { "path": "docs/evidence/workspace-ui/empty.png", "sha256": "5292ac5a170cdd9cb244fca817b95c26d65cafe8974b92dfc888ab4841d0ea6b" },
+    { "path": "docs/evidence/workspace-ui/empty-light.png", "sha256": "e0e2f10b3e1657c3afdc0fc83492f1b78f97338c3b7a260808226907fc3ac11c" },
+    { "path": "docs/evidence/workspace-ui/project-actions.png", "sha256": "9d639a135df20141ee9d8af58301d5e8e002cf639da9943d26b96df6334fbd79" },
+    { "path": "docs/evidence/workspace-ui/chat-actions.png", "sha256": "b82b2d3b5597b1e96f49b1796cf4f1a1afa70d3cc6b68a68039e3be21a81bedc" },
+    { "path": "docs/evidence/workspace-ui/changes-dark.png", "sha256": "f0f9e6525c9c210eb91f030692bb59591eca20d6d861e8d0676026354d9e8034" },
+    { "path": "docs/evidence/workspace-ui/followup.png", "sha256": "a28c05c15e6f0e0414b2c768492af1bdbf488126d1449f7277067837186fbf75" },
+    { "path": "docs/evidence/workspace-ui/question.png", "sha256": "a5910912ca3a47e6f10fb103ccf5212067f059c68777c6ac1d2682fc2f03a67b" },
+    { "path": "docs/evidence/workspace-ui/error.png", "sha256": "44dd8c1a495c9426e450c904ced8aa0707016fd39e32073271b8fe583f0fd1a5" },
+    { "path": "docs/evidence/workspace-ui/profile.png", "sha256": "d13def2b0d2bade1d60e3a4a23dfb6009b46578110044c2e9a1c41edc50b87bc" },
+    { "path": "docs/evidence/workspace-ui/plugins.png", "sha256": "d996b312bafeddc0975870c27a02eca6b02458ec67adbb453c0532aaa847cbca" },
+    { "path": "docs/evidence/workspace-ui/automations.png", "sha256": "5fc41063451b4371c4a314d08b515cf2981bf9396db049faf66623f9f299d71e" },
+    { "path": "docs/evidence/workspace-ui/search.png", "sha256": "367f2e03be6d1db6f6f88b4dd7d5ced6f8238cfaf807fef823386a695247ab74" },
+    { "path": "apps/desktop/renderer/src/App.tsx", "sha256": "eca4c1ad20ef2a2bd2f48c17d5d7cad6763390ed984ed9cce04d7cb9eb0646c9" },
+    { "path": "apps/desktop/renderer/src/ChatActionsMenu.tsx", "sha256": "ac0fe10e5eb2899982b55c1f2c8ad00f232ca1df2151c78ffc5624bc08852767" },
+    { "path": "apps/desktop/renderer/src/ChangeReviewPanel.tsx", "sha256": "8f51c716f23b448836a6141e8401606fbf831a1db8078f89fbbb9541f5ee3f10" },
+    { "path": "apps/desktop/renderer/src/WorkspaceSidebar.tsx", "sha256": "269c54a8733c56eff87435e6ff956b71250c77aa7ad008c7ba1f3cb7f874cb64" },
+    { "path": "apps/desktop/renderer/src/style.css", "sha256": "834ea4971eec4d8a1c1e2bb850b1f75ddfa373cd1f5accf9fa1808b4ce14ea6e" },
+    { "path": "scripts/acceptance/workspace-ui.ts", "sha256": "7a99e00b1a57820132df0546dacac5827b07b11d029b54695a8f8c80818d31eb" }
+  ]
+}

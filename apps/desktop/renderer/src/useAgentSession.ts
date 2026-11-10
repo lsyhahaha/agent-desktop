@@ -192,7 +192,7 @@ export function useAgentSession() {
     connectionError,
     changes: state?.changes,
     draft: state?.draft ?? "",
-    title: state?.title ?? "新任务",
+    title: state?.title ?? "新聊天",
     sessionPage: state?.sessionPage ?? 0,
     hasMoreSessions: state?.hasMoreSessions ?? false,
     runs: state?.runs ?? [],

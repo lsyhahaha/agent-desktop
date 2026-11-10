@@ -248,6 +248,7 @@ function Interaction({
           if (answer.trim()) void submit(answer.trim());
         }}
       >
+        <strong className="interaction-title">需要你的回答</strong>
         <label htmlFor={`answer-${interaction.id}`}>你的回答</label>
         {interaction.options?.length ? (
           <div className="timeline-options">
@@ -278,6 +279,7 @@ function Interaction({
     );
   return (
     <div className="timeline-interaction">
+      <strong className="interaction-title">需要你的批准</strong>
       <p>
         {interaction.kind === "edit_file"
           ? "批准将替换以上文件内容，请先展开文件前后对照审阅。仅修改该文件；冲突会阻止写入。"

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PluginList } from "@protocol";
+import { PluginDirectoryPreview } from "./PluginDirectoryPreview";
+import { SkillsDirectoryPreview } from "./SkillsDirectoryPreview";
 
 interface Props { active: boolean }
 
 /** 插件页只调用窄桥接；目录选择、文件复制与进程启动均由Main持有。 */
 export function PluginSettingsPage({ active }: Props) {
+  const [view, setView] = useState<"directory" | "skills" | "local">("directory");
   const [data, setData] = useState<PluginList | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -23,9 +26,15 @@ export function PluginSettingsPage({ active }: Props) {
   return (
     <section className="settings-page plugin-settings" aria-labelledby="plugins-heading">
       <header className="page-heading">
-        <h1 id="plugins-heading">本地插件</h1>
-        <p>安装受信任的本地中间件，观察或改写 Run、模型与工具生命周期。</p>
+        <h1 id="plugins-heading">插件</h1>
+        <p>浏览插件目录预览，或管理已经受信任的本地中间件。</p>
       </header>
+      <nav className="plugin-page-tabs" aria-label="插件页面">
+        <button aria-pressed={view === "directory"} onClick={() => setView("directory")}>插件目录</button>
+        <button aria-pressed={view === "skills"} onClick={() => setView("skills")}>Skills · Mock</button>
+        <button aria-pressed={view === "local"} onClick={() => setView("local")}>本地插件</button>
+      </nav>
+      {view === "directory" ? <PluginDirectoryPreview /> : view === "skills" ? <SkillsDirectoryPreview /> : <>
       <div className="plugin-warning" role="note">
         <strong>本地插件是可执行代码，不是安全沙箱。</strong>
         <span>插件进程不会收到模型 API Key，也不能提高 Agent 权限；但插件自身仍可能以当前用户身份访问文件或网络。</span>
@@ -64,6 +73,7 @@ export function PluginSettingsPage({ active }: Props) {
           ))}
         </div>
       )}
+      </>}
     </section>
   );
 }

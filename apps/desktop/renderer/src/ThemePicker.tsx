@@ -27,7 +27,7 @@ const initialTheme = readTheme();
 applyTheme(initialTheme);
 
 /** 原生弹出层处理外部点击与 Escape；系统监听随组件卸载清理。 */
-export function ThemePicker() {
+export function ThemePicker({ menuId = "theme-menu", showLabel = false }: { menuId?: string; showLabel?: boolean }) {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [saveError, setSaveError] = useState("");
   const menu = useRef<HTMLDivElement>(null);
@@ -54,13 +54,14 @@ export function ThemePicker() {
   }
   return (
     <div className="theme-controls">
-      <button ref={trigger} className="settings-trigger" type="button"
-        aria-label="切换主题" title="切换主题" popoverTarget="theme-menu">
+      <button ref={trigger} className={`settings-trigger${showLabel ? " theme-trigger-labelled" : ""}`} type="button"
+        aria-label="切换主题" title="切换主题" popoverTarget={menuId}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" />
         </svg>
+        {showLabel && <><span className="theme-current-label">{choices.find((item) => item.value === theme)?.label}</span><span aria-hidden="true">⌄</span></>}
       </button>
-      <div id="theme-menu" ref={menu} className="settings-popover theme-popover"
+      <div id={menuId} ref={menu} className="settings-popover theme-popover"
         popover="auto" role="dialog" aria-label="外观模式"
         onToggle={(event) => {
           if (event.newState === "open")

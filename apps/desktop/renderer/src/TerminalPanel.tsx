@@ -404,6 +404,13 @@ export function TerminalPanel({
           {error}
         </p>
       )}
+      {!state && !starting && workspacePath && (
+        <div className="terminal-empty">
+          <strong>打开终端</strong>
+          <p>在当前项目中启动真实的本机 Shell。</p>
+          <button type="button" onClick={() => void start()}>新建终端</button>
+        </div>
+      )}
       <div className="pty-host" ref={host} aria-label="真实PTY终端" />
     </section>
   );

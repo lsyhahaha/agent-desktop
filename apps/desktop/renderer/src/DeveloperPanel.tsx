@@ -1,12 +1,14 @@
 import { lazy, Suspense, useState } from "react";
 import type { SessionSnapshot, TimelineItem } from "@protocol";
-import { CopyText } from "./MarkdownReply";
+import { ChangeReviewPanel } from "./ChangeReviewPanel";
+import { WorkspaceFilesPreview } from "./WorkspaceFilesPreview";
+import { ArtifactPreviewMock } from "./ArtifactPreviewMock";
 const TerminalPanel = lazy(() =>
   import("./TerminalPanel").then((module) => ({
     default: module.TerminalPanel,
   })),
 );
-/** 右侧仅承载用户终端；聊天执行时间线继续由原会话投影负责。 */
+/** 同一面板承载终端、只读改动及显式Mock预览；终端由外层布局放入底部抽屉，其余视图位于右侧。 */
 export function DeveloperPanel({
   sessionId,
   workspacePath,
@@ -14,6 +16,8 @@ export function DeveloperPanel({
   onCollapse,
   maximized,
   onMaximize,
+  view,
+  onViewChange,
   changes, onRefresh, items = [], busy = false,
 }: {
   changes?: SessionSnapshot["changes"];
@@ -26,8 +30,9 @@ export function DeveloperPanel({
   onCollapse: () => void;
   maximized: boolean;
   onMaximize: () => void;
+  view: "terminal" | "changes" | "files" | "preview";
+  onViewChange: (view: "terminal" | "changes" | "files" | "preview") => void;
 }) {
-  const [view, setView] = useState("terminal");
   const [pending, setPending] = useState(false);
   const [openError, setOpenError] = useState("");
   async function openFile(path: string) {
@@ -41,45 +46,42 @@ export function DeveloperPanel({
     try { await onRefresh(path); } finally { setPending(false); }
   }
   return (
-    <aside className="developer-panel" aria-label="终端面板">
+    <aside className={`developer-panel developer-panel-${view}`} aria-label="开发者面板">
       <header className="terminal-panel-header">
-        <nav aria-label="开发者视图">
-          <button aria-pressed={view === "terminal"} onClick={() => setView("terminal")}>终端</button>
-          <button aria-pressed={view === "changes"} onClick={() => { setView("changes"); if (!changes) void refresh(); }}>改动</button>
-        </nav>
+        {view === "terminal" ? <div className="terminal-drawer-title"><strong>Terminal</strong><small>本机 Shell</small></div> : <nav aria-label="开发者视图">
+          <button aria-pressed={view === "changes"} onClick={() => { onViewChange("changes"); if (!changes) void refresh(); }}>改动</button>
+          <button aria-pressed={view === "files"} onClick={() => onViewChange("files")}>文件</button>
+          <button aria-pressed={view === "preview"} onClick={() => onViewChange("preview")}>预览</button>
+        </nav>}
         <div>
-          <button
+          {view !== "terminal" && <button
             aria-label={maximized ? "还原面板" : "最大化面板"}
             onClick={onMaximize}
           >
             {maximized ? "↙" : "↗"}
-          </button>
-          <button aria-label="收起面板" onClick={onCollapse}>
+          </button>}
+          {view !== "terminal" && <button aria-label="收起面板" onClick={onCollapse}>
             —
-          </button>
+          </button>}
           <button aria-label="关闭开发者面板" onClick={onClose}>
             ×
           </button>
         </div>
       </header>
-      {view === "changes" && <section className="changes-panel" aria-label="工作区改动">
-        <button disabled={pending || busy || !workspacePath} onClick={() => void refresh()}>{pending ? "读取中…" : "刷新改动"}</button>
-        {openError && <p role="alert">{openError}</p>}
-        <p>工作区现有改动 · 修改归属未确认</p>
-        {changes && <small>读取于 {new Date(changes.capturedAt).toLocaleString()}</small>}
-        {!workspacePath && <p>请先选择项目</p>}
-        {changes?.git && <><p>暂存区相对HEAD，工作区相对暂存区。未跟踪文本单独读取。</p>
-          {!changes.files.length && <p>工作区无改动</p>}
-          <ul>{changes.files.map((file) => <li key={file.path}>
-            <button disabled={pending || busy} onClick={() => void refresh(file.path)}>
-              <code>{file.index}{file.worktree}</code> {file.path}
-            </button><button disabled={pending || busy} onClick={() => void openFile(file.path)}>打开文件</button></li>)}</ul></>}
-        {changes && !changes.git && <><p>{changes.detail}</p><h4>本轮已确认文件修改</h4>
-          {items.filter((item) => item.type === "file_change" && item.data.outcome === "applied").map((item) =>
-            <p key={item.id}>{item.type === "file_change" && item.data.path}</p>)}
-          <small>仅覆盖本轮结构化修改记录，Shell与外部写入未全面核对。</small></>}
-        {changes?.git && changes.detail && <><CopyText text={changes.detail} label="复制差异" /><pre>{changes.detail}</pre></>}
-      </section>}
+      {view === "changes" && (
+        <ChangeReviewPanel
+          changes={changes}
+          items={items}
+          workspacePath={workspacePath}
+          busy={busy}
+          pending={pending}
+          openError={openError}
+          onRefresh={(path) => void refresh(path)}
+          onOpenFile={(path) => void openFile(path)}
+        />
+      )}
+      {view === "files" && <WorkspaceFilesPreview workspaceName={workspacePath?.split("/").filter(Boolean).at(-1) ?? "当前项目"} />}
+      {view === "preview" && <ArtifactPreviewMock />}
       {/* 切换视图保留PTY组件与会话，避免重复启动Shell。 */}
       <div className="terminal-view" hidden={view !== "terminal"}>
       <Suspense

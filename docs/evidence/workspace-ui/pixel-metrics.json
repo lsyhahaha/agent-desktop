@@ -1,0 +1,59 @@
+{
+  "measuredOn": "2026-11-06",
+  "official": {
+    "source": "https://learn.chatgpt.com/images/codex/app/codex-app-basic-dark.webp",
+    "sourceSize": [3600, 2026],
+    "windowCrop": [466, 137, 3131, 1897],
+    "sidebarRatio": 0.2293,
+    "composerMainWidthRatio": 0.7089,
+    "composerTopYRatio": 0.4278,
+    "composerInputHeightPhysicalPixels": 192
+  },
+  "local": {
+    "source": "docs/evidence/workspace-ui/empty.png",
+    "sourceSize": [2640, 1656],
+    "sidebarRatio": 0.2318,
+    "composerMainWidthRatio": 0.7101,
+    "composerTopYRatioBeforeCalibration": 0.4136,
+    "composerTopYRatioAfterCalibration": 0.4269,
+    "composerInputHeightBeforeCalibrationPhysicalPixels": 208,
+    "composerInputHeightAfterCalibrationPhysicalPixels": 192
+  },
+  "absoluteDifferencePercentagePoints": {
+    "sidebar": 0.25,
+    "composerMainWidth": 0.12,
+    "composerTopY": 0.09
+  },
+  "sampledColors": {
+    "officialDarkCanvas": "#111111",
+    "localDarkCanvas": "#111111",
+    "officialDarkComposer": "#262626",
+    "localDarkComposer": "#262626",
+    "officialDarkComposerContext": "#181818",
+    "localDarkComposerContext": "#181818",
+    "officialDarkBorder": "#3B3D44",
+    "officialDarkSidebarGradient": ["#2C3344", "#222944"],
+    "localDarkSidebarSamples": ["#2C3142", "#242942"],
+    "officialLightComposer": "#F5F5F5",
+    "officialLightSidebarGradient": ["#F0F3F7", "#DAE2F7"],
+    "officialAutomationDarkOuter": "#000000",
+    "officialAutomationDarkBackdrop": "#232323",
+    "officialAutomationDarkCard": "#242424",
+    "officialAutomationLightCard": "#FDFDFD"
+  },
+  "typographyPhysicalPixels": {
+    "officialEmptyTitleHeight": 42,
+    "localEmptyTitleHeightBeforeCalibration": 50,
+    "localEmptyTitleHeightAfterCalibration": 41,
+    "officialComposerPlaceholderHeight": 25,
+    "localComposerPlaceholderHeightBeforeCalibration": 27,
+    "localComposerPlaceholderHeightAfterCalibration": 25,
+    "officialPrimaryNavigationTextHeight": 24,
+    "localPrimaryNavigationTextHeight": 24
+  },
+  "method": "The official application window was isolated from the public 3600x2026 image. Large contiguous low-luminance runs were used to measure the sidebar boundary and composer bounds. Text, branding, wallpaper and native-window pixels were excluded from completion claims.",
+  "limitations": [
+    "The official screenshot and local evidence use different content and native-window framing, so a whole-image pixel error would be misleading.",
+    "The metrics validate major region proportions, not typography, icons, animation or unavailable states."
+  ]
+}

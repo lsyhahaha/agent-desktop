@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PermissionPicker } from "./PermissionPicker";
 import { DeveloperPanel } from "./DeveloperPanel";
 import { MarkdownReply } from "./MarkdownReply";
@@ -11,6 +11,18 @@ import { ToolRecords } from "./ToolRecords";
 import { ModelSettingsPage } from "./ModelSettingsPage";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 import { useAgentSession } from "./useAgentSession";
+import { PinnedPreview, ProjectListPreview, ProjectRow, SettingsNavigation, type SettingsPage, WorkspacePrimaryNav } from "./WorkspaceSidebar";
+import { AppearancePreviewPage, ArchivedChatsPreviewPage, AutomationPreviewPage, BrowserSettingsPreviewPage, CloudEnvironmentPreviewPage, ComputerUseSettingsPreviewPage, ConnectionsSettingsPreviewPage, GeneralSettingsPreviewPage, GitSettingsPreviewPage, KeyboardShortcutsPreviewPage, McpSettingsPreviewPage, MemoriesSettingsPreviewPage, NotificationSettingsPreviewPage, PersonalizationSettingsPreviewPage, PetsSettingsPreviewPage, ProfileSettingsPreviewPage, SuggestedPromptsSettingsPreviewPage, WorktreePreviewPage } from "./PreviewPages";
+import { SearchPage } from "./SearchPage";
+import { ChatActionsMenu, ProjectActionsMenu, type ChatMenuTarget, type ProjectMenuTarget } from "./ChatActionsMenu";
+
+/** 侧栏菜单共用边界内定位；打开时序交给原生popoverTarget，避免手动show与点击轻关闭竞态。 */
+function prepareSidebarPopover(menu: HTMLDivElement, trigger: HTMLButtonElement, onReady: () => void) {
+  const box = trigger.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - 188, box.right - 180))}px`;
+  menu.style.top = `${Math.max(8, Math.min(window.innerHeight - 126, box.bottom + 4))}px`;
+  onReady();
+}
 
 /** 分组以本机自然日为界，跨月和夏令时仍按日期判断。 */
 function dayGroup(time: number) {
@@ -35,8 +47,11 @@ const runLabels = {
 /** 两个页面共用已有会话连接；切换模型设置不会销毁正在运行的 Agent。 */
 export function App() {
   const agent = useAgentSession();
+  // hiddenInset 的交通灯只存在于 macOS；平台类仅用于标题栏安全间距，不改变权限或业务逻辑。
+  const macOS = navigator.platform.startsWith("Mac");
   const [developerOpen, setDeveloperOpen] = useState(false),
     [developerMax, setDeveloperMax] = useState(false),
+    [developerView, setDeveloperView] = useState<"terminal" | "changes" | "files" | "preview">("terminal"),
     [developerWidth, setDeveloperWidth] = useState(() => {
       try { const width = Number(localStorage.getItem("workspace-panel-width")); return width >= 320 && width <= 2000 ? width : 420; } catch { return 420; }
     });
@@ -66,9 +81,24 @@ export function App() {
     setDeveloperMax(false);
     requestAnimationFrame(() => developerTrigger.current?.focus());
   }
+  /** 顶栏与面板标签共用同一视图切换，避免两个入口产生不同的开关语义。 */
+  function toggleDeveloperView(view: "terminal" | "changes" | "files" | "preview") {
+    const sameView = developerOpen && developerView === view;
+    setDeveloperView(view);
+    setDeveloperOpen(!sameView);
+    setDeveloperMax(false);
+  }
   // 分隔线使用指针捕获，离开窗口或取消手势不会遗留全局监听。
 
-  const [page, setPage] = useState<"chat" | "settings" | "plugins">("chat");
+  type Page = "chat" | "search" | "automations" | SettingsPage;
+  const [page, setPage] = useState<Page>("chat");
+  // 终端、改动和文件树属于聊天工作区；进入独立页面时关闭面板，避免跨页面残留。
+  useEffect(() => {
+    if (page !== "chat") {
+      setDeveloperOpen(false);
+      setDeveloperMax(false);
+    }
+  }, [page]);
   // 折叠仅影响窗口布局；保留侧栏节点和草稿，不改变会话或正在执行的运行。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const settingsMenu = useRef<HTMLDivElement>(null);
@@ -86,10 +116,15 @@ export function App() {
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
-  const [searching, setSearching] = useState(false),
-    [query, setQuery] = useState("");
+  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null),
     [title, setTitle] = useState("");
+  const [chatMenuTarget, setChatMenuTarget] = useState<ChatMenuTarget | null>(null);
+  const chatMenu = useRef<HTMLDivElement>(null);
+  const chatMenuTrigger = useRef<HTMLButtonElement | null>(null);
+  const [projectMenuTarget, setProjectMenuTarget] = useState<ProjectMenuTarget | null>(null);
+  const projectMenu = useRef<HTMLDivElement>(null);
+  const projectMenuTrigger = useRef<HTMLButtonElement | null>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   // 草稿按会话隔离，切换只改变显示，不丢弃旧任务或把草稿写进模型上下文。
   useEffect(() => {
@@ -151,7 +186,7 @@ export function App() {
       }
     });
   }
-  /** 新任务创建/复用独立草稿，旧任务由Runtime保留。 */
+  /** 新聊天创建/复用独立草稿，旧聊天由Runtime保留。 */
   async function newChat() {
     await withSavedDraft(async () => {
       if (await agent.command({ type: "new" })) {
@@ -269,14 +304,24 @@ export function App() {
     return () => clearTimeout(timer);
   }, [query, agent.sessionId, agent.active, agent.pending]);
   const shownTasks = agent.sessions;
+  // 统计只来自已读取的真实Diff快照；未读取时显示未知，不能用0伪装成干净工作区。
+  const changeStats = useMemo(() => {
+    if (!agent.changes?.git || !agent.changes.detail) return null;
+    let added = 0, removed = 0;
+    for (const line of agent.changes.detail.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) added += 1;
+      else if (line.startsWith("-") && !line.startsWith("---")) removed += 1;
+    }
+    return { added, removed };
+  }, [agent.changes]);
   return (
     <div
       className={
-        "desktop-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "") +
+        "desktop-shell codex-aligned" + (macOS ? " platform-macos" : "") + (sidebarCollapsed ? " sidebar-collapsed" : "") +
         (wide ? " reading-wide" : "") + (composerExpanded ? " composer-expanded" : "")
       }
     >
-      {/* 应用工具拥有独立布局行；隐藏导航后仍可访问，不覆盖聊天或终端。 */}
+      {/* 折叠入口位于标题栏，设置入口位于侧栏底部，与 Codex 的导航层级一致。 */}
       <nav className="app-controls" aria-label="应用工具">
         <button
           className="sidebar-toggle"
@@ -294,15 +339,10 @@ export function App() {
             fill="none"
             aria-hidden="true"
           >
-            <circle cx="10" cy="10" r="7.5" />
-            <path
-              d={
-                sidebarCollapsed
-                  ? "m8.5 6.5 3.5 3.5-3.5 3.5"
-                  : "m11.5 6.5-3.5 3.5 3.5 3.5"
-              }
-            />
+            <rect x="2.5" y="3" width="15" height="14" rx="2" />
+            <path d="M7 3v14" />
           </svg>
+          <span className="sidebar-toggle-label">侧栏</span>
         </button>
         {/* 原生自动弹出层负责点击外部/Escape 关闭；只列出已实现的设置。 */}
         <div className="settings-controls">
@@ -324,6 +364,7 @@ export function App() {
               <path d="m9.5 3-.5 2-1.5.9-2-.5L3 9.6l1.5 1.5v1.8L3 14.4l2.5 4.2 2-.5 1.5.9.5 2h5l.5-2 1.5-.9 2 .5 2.5-4.2-1.5-1.5v-1.8L21 9.6l-2.5-4.2-2 .5L15 5l-.5-2z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
+            <span>设置</span>
           </button>
           <div
             id="settings-menu"
@@ -362,9 +403,11 @@ export function App() {
             >
               <span aria-hidden="true">⬡</span> 插件
             </button>
+            <div className="settings-theme-entry">
+              <span>主题</span><ThemePicker />
+            </div>
           </div>
         </div>
-        <ThemePicker />
       </nav>
       <aside
         id="workspace-sidebar"
@@ -373,96 +416,75 @@ export function App() {
         hidden={sidebarCollapsed}
       >
         <div className="window-drag sidebar-drag" />
-        {page === "settings" || page === "plugins" ? (
-          <>
-            <button className="nav-item back" onClick={() => setPage("chat")}>
-              <span>←</span> 返回工作区
-            </button>
-            <div className="group-label nav-label">基础设置</div>
-            <button className={"nav-item " + (page === "settings" ? "selected" : "")} aria-current={page === "settings" ? "page" : undefined} onClick={() => setPage("settings")}>
-              <span>◇</span> 模型设置
-            </button>
-            <button className={"nav-item " + (page === "plugins" ? "selected" : "")} aria-current={page === "plugins" ? "page" : undefined} onClick={() => setPage("plugins")}>
-              <span>⬡</span> 插件
-            </button>
-          </>
+        {["general", "profile", "shortcuts", "notifications", "browser", "computer", "personalization", "suggestions", "memories", "pets", "mcp", "connections", "git", "settings", "plugins", "appearance", "cloud", "worktrees", "archived"].includes(page) ? (
+          <SettingsNavigation
+            page={page as SettingsPage}
+            onBack={() => setPage("chat")}
+            onPage={setPage}
+          />
         ) : (
           <>
-            <div className="app-brand">
-              Agent Desktop<span>本地开发助手</span>
+            <div className="app-brand" aria-label="Agent Desktop">
+              Agent Desktop
             </div>
-            <button
-              className="nav-item new-task"
-              onClick={() => void newChat()}
-              disabled={
+            <WorkspacePrimaryNav
+              busy={
                 !!agent.connectionError ||
                 agent.active ||
                 agent.pending ||
                 clearing
               }
-            >
-              <span>⊕</span> 新建任务<kbd>⌘ N</kbd>
-            </button>
+              activePage={page === "automations" ? "automations" : page === "search" ? "search" : "chat"}
+              onNewChat={() => void newChat()}
+              onSearch={() => { setQuery(""); setPage("search"); }}
+              onPlugins={() => setPage("plugins")}
+              onAutomations={() => setPage("automations")}
+            />
+            <PinnedPreview />
             <div className="sidebar-context">
-              <span className="group-label">当前项目</span>
-              <button className="no-project" disabled={agent.active || agent.pending}
-                onClick={() => void noProject()}>无项目对话</button>
-              <button
-                className="workspace-link"
-                onClick={() => void chooseWorkspace()}
+              <div className="group-label sidebar-group-heading">
+                <span>项目</span>
+                <span className="sidebar-group-actions">
+                  <button type="button" disabled title="项目筛选尚未实现" aria-label="筛选项目 · Mock"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M5 8h6M7 12h2" /></svg></button>
+                  <button type="button" onClick={() => void chooseWorkspace()} disabled={!!agent.connectionError || agent.active || agent.pending || agent.choosing} title="添加或切换项目" aria-label="添加或切换项目"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h4l1.5 2h5.5v7h-11zM11.5 1.5v4M9.5 3.5h4" /></svg></button>
+                </span>
+              </div>
+              <ProjectRow
+                name={agent.choosing ? "正在选择…" : (agent.workspace?.name ?? "选择项目目录")}
+                onSelect={() => void chooseWorkspace()}
                 disabled={
                   !!agent.connectionError ||
                   agent.active ||
                   agent.pending ||
                   agent.choosing
                 }
-              >
-                <span>▱</span>
-                <span>
-                  {agent.choosing
-                    ? "正在选择…"
-                    : (agent.workspace?.name ?? "选择项目目录")}
-                </span>
-              </button>
-              <p>
-                {agent.storageError
-                  ? "本地保存异常"
-                  : agent.connectionError
-                    ? "历史记录尚未加载"
-                    : "任务保存在本机"}
-              </p>
+                onMore={(name, trigger) => {
+                  if (!projectMenu.current) return;
+                  projectMenuTrigger.current = trigger;
+                  prepareSidebarPopover(projectMenu.current, trigger, () => setProjectMenuTarget({ name }));
+                }}
+              />
+              <ProjectListPreview onMore={(name, trigger) => {
+                if (!projectMenu.current) return;
+                projectMenuTrigger.current = trigger;
+                prepareSidebarPopover(projectMenu.current, trigger, () => setProjectMenuTarget({ name }));
+              }} />
+              <button className="no-project" disabled={agent.active || agent.pending}
+                onClick={() => void noProject()}>无项目对话</button>
             </div>
-            <div className="sidebar-divider" />
             <div className="group-label nav-label task-list-heading">
               <span>
-                任务列表 <span className="count">{agent.sessions.length}</span>
+                聊天 <span className="count">{agent.sessions.length}</span>
               </span>
-              <button
-                aria-label="搜索项目任务"
-                title="搜索项目任务"
-                onClick={() => {
-                  setSearching(!searching);
-                  setQuery("");
-                }}
-              >
-                ⌕
-              </button>
+              <span className="sidebar-group-actions">
+                <button type="button" disabled title="聊天筛选尚未实现" aria-label="筛选聊天 · Mock"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M5 8h6M7 12h2" /></svg></button>
+                <button type="button" onClick={() => void newChat()} disabled={!!agent.connectionError || agent.active || agent.pending || clearing} title="新建聊天" aria-label="新建聊天"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h7v10H3zM8.5 6.5l4-4 1 1-4 4-2 .5z" /></svg></button>
+              </span>
             </div>
-            {searching && (
-              <input
-                className="task-search"
-                maxLength={200}
-                aria-label="搜索项目任务与对话"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索项目任务与对话"
-                autoFocus
-              />
-            )}
             <div className="task-list">
               {!shownTasks.length ? (
                 <p className="empty-list">
-                  {query ? "没有匹配的任务" : "发送第一条消息后显示任务"}
+                  {query ? "没有匹配的聊天" : "发送第一条消息后显示聊天"}
                 </p>
               ) : (
                 shownTasks.map((item, index) => (
@@ -485,14 +507,14 @@ export function App() {
                         }}
                       >
                         <input
-                          aria-label="任务名称"
+                          aria-label="聊天名称"
                           maxLength={60}
                           value={title}
                           onChange={(event) => setTitle(event.target.value)}
                           autoFocus
                         />
                         <button
-                          aria-label="保存任务名称"
+                          aria-label="保存聊天名称"
                           disabled={!title.trim() || agent.pending}
                         >
                           ✓
@@ -538,12 +560,16 @@ export function App() {
                         </button>
                         <button
                           className="task-more"
-                          aria-label={"重命名 " + item.title}
-                          title="重命名任务"
+                          aria-label={item.title + " 更多聊天操作"}
+                          title="更多聊天操作"
+                          popoverTarget="chat-actions-menu"
+                          popoverTargetAction="show"
                           disabled={agent.active || agent.pending}
-                          onClick={() => {
-                            setEditing(item.id);
-                            setTitle(item.title);
+                          onClick={(event) => {
+                            const menu = chatMenu.current;
+                            if (!menu) return;
+                            chatMenuTrigger.current = event.currentTarget;
+                            prepareSidebarPopover(menu, event.currentTarget, () => setChatMenuTarget({ id: item.id, title: item.title }));
                           }}
                         >
                           ⋯
@@ -555,7 +581,7 @@ export function App() {
                 ))
               )}
             </div>
-            <div className="session-pagination">
+            {(agent.sessionPage > 0 || agent.hasMoreSessions) && <div className="session-pagination" aria-label="聊天分页">
               <button
                 disabled={
                   agent.sessionPage === 0 || agent.active || agent.pending
@@ -583,7 +609,28 @@ export function App() {
               >
                 下一页
               </button>
-            </div>
+            </div>}
+            <ChatActionsMenu
+              menuRef={chatMenu}
+              target={chatMenuTarget}
+              onClose={() => {
+                setChatMenuTarget(null);
+                chatMenuTrigger.current?.focus();
+              }}
+              onRename={(target) => {
+                chatMenu.current?.hidePopover();
+                setEditing(target.id);
+                setTitle(target.title);
+              }}
+            />
+            <ProjectActionsMenu
+              menuRef={projectMenu}
+              target={projectMenuTarget}
+              onClose={() => {
+                setProjectMenuTarget(null);
+                projectMenuTrigger.current?.focus();
+              }}
+            />
 
           </>
         )}
@@ -606,6 +653,7 @@ export function App() {
         className={
           "workspace-columns" +
           (developerOpen ? " has-developer" : "") +
+          (developerOpen && developerView === "terminal" ? " terminal-drawer" : "") +
           (developerOpen && developerMax ? " developer-maximized" : "")
         }
         style={
@@ -622,32 +670,52 @@ export function App() {
             <div className="window-drag header-drag" />
 
             <span>
-              {page === "settings" ? "模型设置" : page === "plugins" ? "插件" : empty ? "新任务" : currentTitle}
+              {page === "general" ? "通用" : page === "profile" ? "个人资料" : page === "shortcuts" ? "键盘快捷键" : page === "notifications" ? "通知" : page === "browser" ? "浏览器" : page === "computer" ? "Computer Use" : page === "personalization" ? "个性化" : page === "suggestions" ? "建议提示" : page === "memories" ? "记忆" : page === "pets" ? "Pets" : page === "mcp" ? "MCP 服务" : page === "connections" ? "连接" : page === "git" ? "Git" : page === "settings" ? "模型设置" : page === "plugins" ? "插件" : page === "appearance" ? "外观" : page === "cloud" ? "环境" : page === "worktrees" ? "Worktrees" : page === "archived" ? "已归档聊天" : page === "automations" ? "自动化" : page === "search" ? "搜索" : empty ? "新聊天" : currentTitle}
             </span>
             <div className="header-actions">
-              <button
-                ref={developerTrigger}
-                className="developer-trigger"
-                aria-label="打开终端"
-                aria-expanded={developerOpen}
-                onClick={() => {
-                  setDeveloperOpen(!developerOpen);
-                  setDeveloperMax(false);
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  aria-hidden="true"
+              {page === "chat" && agent.workspace && (
+                <>
+                  {/* 与 Codex 顶栏保持同构；编辑器启动和提交仍是明确禁用的视觉占位。 */}
+                  <button className="editor-action-mock" type="button" disabled title="编辑器启动尚未接入" aria-label="在编辑器中打开 · Mock">
+                    <span className="editor-mark">◇</span><span>⌄</span>
+                  </button>
+                  <button className="git-action-mock" type="button" disabled title="Git 提交底层能力尚未接入">
+                    <span aria-hidden="true">↹</span> Commit <span aria-hidden="true">⌄</span>
+                  </button>
+                </>
+              )}
+              {page === "chat" && <>
+                <button
+                  ref={developerTrigger}
+                  className="developer-trigger developer-action"
+                  aria-label="打开终端"
+                  aria-pressed={developerOpen && developerView === "terminal"}
+                  onClick={() => toggleDeveloperView("terminal")}
                 >
-                  <rect x="2" y="3" width="16" height="14" rx="2" />
-                  <path d="m5 7 3 3-3 3m5 0h5" />
-                </svg>
-              </button>
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <rect x="2" y="3" width="16" height="14" rx="2" />
+                    <path d="m5 7 3 3-3 3m5 0h5" />
+                  </svg>
+                </button>
+                <button
+                  className="developer-trigger git-stats-action"
+                  aria-label="打开改动审阅"
+                  title={changeStats ? "基于当前已读取Diff快照" : "点击打开改动并读取文件列表"}
+                  aria-pressed={developerOpen && developerView === "changes"}
+                  onClick={() => {
+                    const opening = !developerOpen || developerView !== "changes";
+                    toggleDeveloperView("changes");
+                    if (opening && agent.sessionId && !agent.changes)
+                      void agent.command({ type: "workspace_changes", sessionId: agent.sessionId });
+                  }}
+                >
+                  <span className="git-added">+{changeStats?.added ?? "–"}</span>
+                  <span className="git-removed">-{changeStats?.removed ?? "–"}</span>
+                </button>
+                <button className="developer-trigger" aria-label="打开文件树" aria-pressed={developerOpen && developerView === "files"} onClick={() => toggleDeveloperView("files")}>
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M13 3v14" /></svg>
+                </button>
+              </>}
               {agent.active && page !== "chat" && (
                 <button className="stop-button" onClick={() => void stop()}>
                   ■ 停止任务
@@ -655,7 +723,7 @@ export function App() {
               )}
               <span
                 role="status"
-                className={"run-status " + (agent.active ? "busy" : "")}
+                className={"run-status " + (agent.active || agent.connectionError || agent.storageError || agent.chat?.interaction ? "busy" : "is-idle")}
               >
                 {agent.connectionError
                   ? "连接异常"
@@ -673,7 +741,33 @@ export function App() {
               </span>
             </div>
           </header>
-          {page === "settings" ? (
+          {page === "general" ? (
+            <GeneralSettingsPreviewPage />
+          ) : page === "profile" ? (
+            <ProfileSettingsPreviewPage />
+          ) : page === "shortcuts" ? (
+            <KeyboardShortcutsPreviewPage />
+          ) : page === "notifications" ? (
+            <NotificationSettingsPreviewPage />
+          ) : page === "browser" ? (
+            <BrowserSettingsPreviewPage />
+          ) : page === "computer" ? (
+            <ComputerUseSettingsPreviewPage />
+          ) : page === "personalization" ? (
+            <PersonalizationSettingsPreviewPage />
+          ) : page === "suggestions" ? (
+            <SuggestedPromptsSettingsPreviewPage />
+          ) : page === "memories" ? (
+            <MemoriesSettingsPreviewPage />
+          ) : page === "pets" ? (
+            <PetsSettingsPreviewPage />
+          ) : page === "mcp" ? (
+            <McpSettingsPreviewPage />
+          ) : page === "connections" ? (
+            <ConnectionsSettingsPreviewPage />
+          ) : page === "git" ? (
+            <GitSettingsPreviewPage />
+          ) : page === "settings" ? (
             <>
               <ModelSettingsPage
                 settings={agent.settings}
@@ -689,6 +783,24 @@ export function App() {
             </>
           ) : page === "plugins" ? (
             <PluginSettingsPage active={agent.active || agent.pending} />
+          ) : page === "appearance" ? (
+            <AppearancePreviewPage />
+          ) : page === "worktrees" ? (
+            <WorktreePreviewPage workspaceName={agent.workspace?.name ?? null} />
+          ) : page === "cloud" ? (
+            <CloudEnvironmentPreviewPage workspaceName={agent.workspace?.name ?? null} />
+          ) : page === "archived" ? (
+            <ArchivedChatsPreviewPage />
+          ) : page === "automations" ? (
+            <AutomationPreviewPage />
+          ) : page === "search" ? (
+            <SearchPage
+              query={query}
+              results={shownTasks}
+              busy={agent.active || agent.pending || clearing}
+              onQuery={setQuery}
+              onSelect={(id) => void selectTask(id)}
+            />
           ) : (
             <div
               className={
@@ -710,11 +822,11 @@ export function App() {
                 >
                   {empty ? (
                     <section className="welcome">
-                      <span className="watermark" aria-hidden="true">
-                        A
-                      </span>
-                      <h1>今天有什么工作，交给我吧</h1>
-                      <p>从一次对话开始，让每一步执行都清晰可见。</p>
+                      <h1>
+                        {agent.workspace
+                          ? `想在 ${projectLabel} 中构建什么？`
+                          : "今天想构建什么？"}
+                      </h1>
                     </section>
                   ) : (
                     <div className="conversation-content">
@@ -916,7 +1028,32 @@ export function App() {
                       agent.chat?.error?.message}
                   </div>
                 )}
+                {agent.active && (
+                  <div className="goal-progress-mock" role="status" aria-label="Goal 进度预览 · Mock">
+                    <span className="goal-progress-dot" aria-hidden="true" />
+                    <strong>当前任务</strong>
+                    <small>Goal · Mock</small>
+                    <span className="composer-spacer" />
+                    <button type="button" disabled title="Goal 暂停与恢复尚未实现">暂停</button>
+                    <button type="button" disabled title="Goal 编辑尚未实现">编辑</button>
+                    <button type="button" disabled title="Goal 清除尚未实现">清除</button>
+                  </div>
+                )}
+                {agent.active && text.trim() && (
+                  <section className="followup-draft-preview" aria-label="运行中跟进草稿预览 · Mock">
+                    <span className="followup-grip" aria-hidden="true">⠿</span>
+                    <div>
+                      <strong>{text.trim()}</strong>
+                      <small>未发送 · Mock</small>
+                    </div>
+                    <button type="button" disabled title="Queue 协议尚未实现">编辑</button>
+                    <button type="button" disabled title="Queue 重排协议尚未实现" aria-label="重排跟进消息 · Mock">↕</button>
+                    <button type="button" disabled title="Queue 发送协议尚未实现">发送</button>
+                    <button type="button" disabled title="Queue 删除协议尚未实现" aria-label="删除跟进消息 · Mock">×</button>
+                  </section>
+                )}
                 <div className="composer-wrap">
+                  {/* 视觉顺序由 CSS 固定为输入、权限/模型、项目环境；状态仍来自真实投影。 */}
                   <div className="composer-context">
                     <Tooltip
                       className="project-tooltip"
@@ -951,30 +1088,14 @@ export function App() {
                           <path d="M2.5 5.5h5l2 2h8v9h-15zM2.5 7.5v-3h5l2 2h8v1" />
                         </svg>
                         <span className="project-name">{projectLabel}</span>
+                        <span className="context-chevron" aria-hidden="true">⌄</span>
                       </button>
                     </Tooltip>
-                    <Tooltip
-                      content="普通对话无需选择项目"
-                      align="end"
-                      className="project-info-tooltip"
-                    >
-                      <button
-                        type="button"
-                        className="project-info"
-                        aria-label="项目选择说明"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 20 20"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <circle cx="10" cy="10" r="7.5" />
-                          <path d="M10 9v5m0-8v.5" />
-                        </svg>
-                      </button>
-                    </Tooltip>
+                    <span className="workspace-mode" title={agent.workspace ? "当前直接使用本地项目目录" : "普通对话未绑定项目目录"}>
+                      <svg viewBox="0 0 18 18" aria-hidden="true"><rect x="2.5" y="3" width="13" height="9" rx="1.5" /><path d="M6 15h6M9 12v3" /></svg>
+                      {agent.workspace ? "本地" : "无项目"}<span className="context-chevron" aria-hidden="true">⌄</span>
+                    </span>
+                    {agent.workspace && <span className="workspace-branch" title="尚未接入分支查询"><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="5" cy="4" r="1.5" /><circle cx="5" cy="14" r="1.5" /><circle cx="13" cy="6" r="1.5" /><path d="M5 5.5v7M6.5 11c4 0 6.5-1.5 6.5-3.5" /></svg>分支未确认<span className="context-chevron" aria-hidden="true">⌄</span></span>}
                   </div>
                   <div className="composer">
                     <textarea
@@ -983,14 +1104,16 @@ export function App() {
                       value={text}
                       maxLength={16000}
                       disabled={
-                        clearing || agent.active || agent.pending || !agent.settingsReady || !agent.sessionId
+                        clearing || agent.pending || !agent.settingsReady || !agent.sessionId
                       }
                       onChange={(e) => changeText(e.target.value)}
                       placeholder={
                         agent.connectionError
                           ? "请先完整退出并重新启动 Agent Desktop"
+                          : agent.active
+                            ? "添加跟进消息（Queue / Steer 尚未接入）"
                           : agent.settings.hasKey
-                            ? "和Agent Desktop一起工作"
+                            ? "询问任何问题（@ 插件与文件为 Mock）"
                             : "描述你的任务；发送前请先配置 DeepSeek 模型"
                       }
                       onKeyDown={(e) => {
@@ -1009,6 +1132,11 @@ export function App() {
                         onClick={() => { setComposerExpanded(!composerExpanded); composer.current?.focus(); }}>
                         {composerExpanded ? "收起编辑区" : "展开编辑区"}
                       </button>
+                      {agent.active && (
+                        <div className="active-followup-mock" aria-label="运行中跟进模式尚未实现">
+                          <button type="button" disabled title="默认 Queue 行为尚未接入">排队 <span>⌄</span> · Mock</button>
+                        </div>
+                      )}
                       {/* 内置工具由 Runtime 决定，输入框不再暴露工具实现开关。 */}
                       <PermissionPicker
                         mode={agent.permissionMode}
@@ -1042,6 +1170,12 @@ export function App() {
                             <span>⌄</span>
                           </button>
                         </Tooltip>
+                        <button className="effort-mock" type="button" disabled title="推理强度选择尚未接入">
+                          极高 <span>⌄</span>
+                        </button>
+                        <button className="voice-mock" type="button" disabled title="语音输入尚未接入" aria-label="语音输入 · Mock">
+                          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg>
+                        </button>
                         {agent.active ? (
                           <Tooltip content="停止当前生成" align="end">
                             <button
@@ -1095,14 +1229,14 @@ export function App() {
               {empty && (
                 <div className="suggestions">
                   <span>试试这些任务</span>
-                  <button disabled={agent.active || !agent.workspace} onClick={() => changeText("请检查当前项目的暂存、未暂存和新增文件，概括改动与待验证事项。")}>⌘<span>检查当前改动</span><span>↗</span></button>
+                  <button disabled={agent.active || !agent.workspace} onClick={() => changeText("请检查当前项目的暂存、未暂存和新增文件，概括改动与待验证事项。")}><svg className="suggestion-icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4.5h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H8l-3.5 2 .8-2H3a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z" /></svg><span>检查当前改动</span><span>↗</span></button>
                   <button
                     disabled={agent.active}
                     onClick={() =>
                       changeText("请帮我分析以下报错，定位原因并说明验证方法。\n\n")
                     }
                   >
-                    ✧<span>分析一段报错</span>
+                    <svg className="suggestion-icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4.5h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H8l-3.5 2 .8-2H3a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z" /></svg><span>分析一段报错</span>
                     <span>↗</span>
                   </button>
                   <button
@@ -1116,7 +1250,7 @@ export function App() {
                       changeText("请读取 README.md，说明项目用途和启动方式。");
                     }}
                   >
-                    ▤<span>了解这个项目</span>
+                    <svg className="suggestion-icon" viewBox="0 0 18 18" aria-hidden="true"><circle cx="5" cy="5" r="2" /><circle cx="13" cy="5" r="2" /><circle cx="5" cy="13" r="2" /><circle cx="13" cy="13" r="2" /></svg><span>了解这个项目</span>
                     <span>↗</span>
                   </button>
                 </div>
@@ -1126,7 +1260,7 @@ export function App() {
         </main>
         {developerOpen && (
           <>
-            {!developerMax && (
+            {!developerMax && developerView !== "terminal" && (
               <div
                 className="developer-separator"
                 role="separator"
@@ -1174,6 +1308,8 @@ export function App() {
               onCollapse={closeDeveloper}
               maximized={developerMax}
               onMaximize={() => setDeveloperMax(!developerMax)}
+          view={developerView}
+          onViewChange={setDeveloperView}
               changes={agent.changes}
               items={agent.chat?.items}
               busy={agent.active}

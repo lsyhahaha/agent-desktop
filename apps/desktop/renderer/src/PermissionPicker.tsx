@@ -34,6 +34,9 @@ export function PermissionPicker({
 }) {
   const menu = useRef<HTMLDivElement>(null),
     trigger = useRef<HTMLButtonElement>(null);
+  // Codex Composer 使用“默认权限”概括基线模式；展开后仍展示真实审批语义与边界。
+  const selected = choices.find((choice) => choice.mode === mode);
+  const triggerLabel = mode === "ask" ? "默认权限" : selected?.label;
   return (
     <div className="permission-picker">
       <button
@@ -44,10 +47,8 @@ export function PermissionPicker({
         popoverTarget="permission-menu"
         title={disabled ? "停止当前任务后可修改权限" : "设置 Agent 操作权限"}
       >
-        <span aria-hidden="true">
-          {choices.find((c) => c.mode === mode)?.icon}
-        </span>{" "}
-        {choices.find((c) => c.mode === mode)?.label}
+        <span aria-hidden="true">{selected?.icon}</span>{" "}
+        {triggerLabel}
       </button>
       <div
         id="permission-menu"
