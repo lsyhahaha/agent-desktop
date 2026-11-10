@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "swe-bench-verified",
+  "taskId": "controlled__fixture-1",
+  "repository": "lsyhahaha/agent-desktop",
+  "baseCommit": "fd8135ddcfec0db7bf1407c64cb200d61c192bf4",
+  "datasetRevision": "controlled-preflight-only",
+  "prompt": "受控 preflight 夹具：验证无头评测入口，不调用模型，也不代表真实 SWE-bench 任务。"
+}

@@ -69,6 +69,10 @@ Agent回复支持Markdown标题、强调、列表、引用、代码块和GFM表�
 
 见 [本轮验证记录](docs/agent-loop-verification.md)。已通过真实 DeepSeek 回答、连续追问、流式显示、停止及临时文件读取/拒绝链路；另外保留此前受控集成检查的独立范围，资源极限不冒充已做付费真实压测。请求完整地址为 `https://api.deepseek.com/v1/chat/completions`，已实际验证可用。
 
+## Coding Agent Benchmark
+
+已增加第一阶段无头任务入口，复用同一 Runtime 接收固定 SWE-bench Verified manifest、运行任务并导出 patch、轨迹摘要和用量。当前只完成 preflight 与产品侧 adapter，尚未接入 Harbor、下载官方镜像或运行 grader；Agent 正常结束不等于任务 resolved。使用方法、权限边界和未完成项见[Benchmark 接入说明](docs/benchmark-verification.md)，选型依据见[Benchmark 研究](research/coding-agent-benchmark-selection.md)。
+
 ## 目录
 
 - apps/desktop/main：窗口、IPC、Runtime 生命周期。

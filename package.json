@@ -22,6 +22,7 @@
     "postinstall": "npm run rebuild:native",
     "evolution": "electron out/main/evolution-admin.js",
     "strategy:lab": "electron out/main/strategy-lab.js",
+    "benchmark:task": "npm run build && electron out/main/benchmark-task.js",
     "acceptance:workspace": "npm run build && node scripts/acceptance/run-workspace.cjs && node scripts/acceptance/run-workspace.cjs --production"
   },
   "dependencies": {

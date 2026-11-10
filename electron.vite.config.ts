@@ -41,6 +41,7 @@ export default defineConfig({
           index: resolve("apps/desktop/main/index.ts"),
           runtime: resolve("apps/runtime/src/index.ts"),
           "strategy-lab": resolve("apps/desktop/main/strategy-lab.ts"),
+          "benchmark-task": resolve("apps/desktop/main/benchmark-task.ts"),
           "evolution-admin": resolve("apps/desktop/main/evolution-admin.ts"),
           "storage-worker": resolve("apps/runtime/src/storage-worker.ts"),
           "plugin-host": resolve("apps/runtime/src/plugin-host.ts"),
